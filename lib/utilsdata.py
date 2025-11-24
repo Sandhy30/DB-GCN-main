@@ -6,9 +6,6 @@ import pandas as pd
 import scipy.sparse as sp
 import torch
 
-# -----------------------------
-# Basic utilities
-# -----------------------------
 import numpy as np
 
 def normalize_by_train(
@@ -91,9 +88,7 @@ def sparse_mx_to_torch_sparse_tensor(sparse_mx: sp.spmatrix) -> torch.Tensor:
     shape = torch.Size(mx.shape)
     return torch.sparse_coo_tensor(indices, values, shape).coalesce()
 
-# -----------------------------
-# Data loaders
-# -----------------------------
+
 def load_singleomic_data(expression_data_path: str) -> pd.DataFrame:
     df = pd.read_csv(expression_data_path, sep="\t", index_col=0, header=0)
     if "icluster_cluster_assignment" not in df.columns:
@@ -115,9 +110,7 @@ def load_multiomics_data(expression_data_path: str, cnv_data_path: str):
     assert expr.index.equals(cnv.index), "Post-alignment indices still differ."
     return expr, cnv
 
-# ==================================================================
-#     FOLD-WISE, LEAK-FREE SELECTION & BUILDERS
-# ==================================================================
+
 def _numeric_gene_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Return numeric feature columns (exclude the label column even if numeric)."""
     cols = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -253,12 +246,7 @@ def build_fold_data_multiomics(expression_df: pd.DataFrame,
                                gene_idx: list,
                                singleton: bool = False,
                                non_null_index_path: str = None):
-    """
-    Leak-free multi-omics builder:
-      - Slices expr+cnv by gene_list -> concat channels (N, G, 2)
-      - Slices sparse adjacency by gene indices matching adjacency row order (no densify)
-      - Channel order: [CNV, Expr]
-    """
+
     if not gene_list:
         raise ValueError("gene_list is empty.")
     labels = expression_df["icluster_cluster_assignment"].to_numpy(dtype=np.int64) - 1
