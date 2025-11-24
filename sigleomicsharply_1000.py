@@ -624,7 +624,7 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
     filt = str(filt).strip().strip('"').strip("'")
     k = int(k); bs = int(bs); dp = float(dp); lr = float(lr)
     if k < 1:
-        raise ValueError(f"❌ K must be at least 1. Given: {k}")
+        raise ValueError(f" K must be at least 1. Given: {k}")
 
     if log_runtime and torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
