@@ -8,9 +8,7 @@ from scipy.sparse.linalg import eigsh
 
 _EPS = 1e-12
 
-# ---------------------------
-# Basic sparse helpers
-# ---------------------------
+
 def _to_csr(W, dtype=np.float32):
     """Return a CSR matrix with desired dtype (if dtype is not None)."""
     if sp.isspmatrix(W):
@@ -23,15 +21,7 @@ def _to_csr(W, dtype=np.float32):
 
 
 def graph_laplacian(W, normalized=True, symmetrize=True, zero_diag=False):
-    """
-    Laplacian:
-      • Unnormalized: L = D - W
-      • Normalized:   L = I - D^{-1/2} W D^{-1/2}
-
-    Robustness:
-      • zero_diag=True  → drop self-loops before building L
-      • symmetrize=True → enforce symmetry via (W + W^T)/2
-    """
+    
     W = _to_csr(W, dtype=np.float32)
     if zero_diag:
         W.setdiag(0)
@@ -41,10 +31,6 @@ def graph_laplacian(W, normalized=True, symmetrize=True, zero_diag=False):
     L = csgraph_laplacian(W, normed=normalized)
     return L.tocsr()
 
-
-# ---------------------------
-# Largest eigenvalue (λmax)
-# ---------------------------
 def _lmax_power(L, max_iter=200, tol=1e-6, seed=0, use_rayleigh=True):
     """
     Power-method estimate of the largest eigenvalue of symmetric PSD L.
@@ -116,10 +102,6 @@ def rescale_to_unit_interval(L, lmax=None, method="power", **kwargs):
     """Backward-compat shim for rescale_to_unit(...)."""
     return rescale_to_unit(L, lmax=lmax, method=method, **kwargs)
 
-
-# ---------------------------
-# Spectral rescaling
-# ---------------------------
 def rescale_L(L, lmax=None, method="power", **kwargs):
     """
     Chebyshev scaling to [-1, 1]:
@@ -155,9 +137,9 @@ def rescale_to_unit(L, lmax=None, method="power", **kwargs):
     return (1.0 / lmax) * L
 
 
-# ---------------------------
+
 # Adjacency normalization (for APPNP/GCN/SAGE)
-# ---------------------------
+
 def to_dense_adj(W):
     """Convert sparse/array-like to a float32 dense numpy array."""
     if sp.isspmatrix(W):
@@ -215,9 +197,6 @@ def gcn_sym_norm(W):
     return sym_norm_dense(A)
 
 
-# ---------------------------
-# Torch helpers
-# ---------------------------
 def torch_dense(t, device=None, dtype=None):
     """
     Convert scipy.spmatrix/ndarray to a Torch dense tensor.
@@ -264,10 +243,6 @@ def torch_sparse_csr(S, device=None, dtype=None):
         ten = ten.to(device)
     return ten
 
-
-# ---------------------------
-# Public exports
-# ---------------------------
 __all__ = [
     "_to_csr",
     "graph_laplacian",
