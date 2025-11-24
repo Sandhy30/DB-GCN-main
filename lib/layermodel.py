@@ -515,13 +515,12 @@ class BernNetHead(nn.Module):
         else:
             raise ValueError("x_in must be (B,N,F0) or (B,N*F0)")
 
-        # <<< NEW: accept [L] and move to feature device >>>
+    
         if isinstance(L, (list, tuple)):
             L = L[0]
         if isinstance(L, torch.Tensor):
             L = L.to(x.device)  # ensure same device as features
 
-        # Optional guard for L range (debug only)
         if __debug__ and isinstance(L, torch.Tensor) and not L.is_sparse:
             try:
                 Lmin = float(L.min()); Lmax = float(L.max())
@@ -532,7 +531,7 @@ class BernNetHead(nn.Module):
 
         B, N, _ = x.shape
 
-        # ---- Graph path ----
+      
         H = self.fc1(x)                                      # [B,N,H]
         if self.bn_before:
             H = self.bn1(H.reshape(B * N, -1)).reshape(B, N, -1)
@@ -550,7 +549,7 @@ class BernNetHead(nn.Module):
             # graph-only
             return None, P, logits_g, 0
 
-        # ---- MLP branch (neighborhood-agnostic) ----
+        # MLP branch (neighborhood-agnostic) 
         Z = self.mlp1(x)                                     # [B,N,H]
         Z = self.mlp_bn(Z.reshape(B * N, -1)).reshape(B, N, -1)
         Z = self.act(Z)
@@ -564,23 +563,13 @@ class BernNetHead(nn.Module):
         return None, H_hidden, logits, 0
 
 
-# Baseline 2: APPNP (minimal)
-# ============================
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 class APPNPHead(nn.Module):
-    """
-    Predict-then-Propagate (K steps with teleport α) on feature space
-    for per-sample signals on a common gene graph.
-
-    Expectations for this implementation:
-      • A_dense passed to forward() is ALREADY symmetric-normalized
-        (S = D^{-1/2} A D^{-1/2}) upstream in build_graph_inputs_for_baseline.
-      • We keep the logits equal to the MLP head (Z0) for parity with your DB-GCN
-        MLP stream and previous results.
-    """
+  
     def __init__(self, D_g, F_0, hidden=64, out_dim=2, alpha=0.1, K=10, stream_mode="fusion"):
         super().__init__()
         self.alpha = float(alpha)
@@ -588,16 +577,11 @@ class APPNPHead(nn.Module):
         self.stream_mode = str(stream_mode).lower()
         self.D_g, self.F_0 = int(D_g), int(F_0)
 
-        # Simple MLP head (same spirit as your MLP stream)
         self.lin1 = nn.Linear(self.D_g * self.F_0, hidden)
         self.lin2 = nn.Linear(hidden, out_dim)
 
     def forward(self, x_in, dropout_p, _L_unused=None, _theta_unused=None, A_dense=None):
-        """
-        x_in:    (B, V, F0) or (B, V*F0)
-        A_dense: (V, V) symmetric-normalized adjacency (torch.FloatTensor) on same device as x_in
-        """
-        # ---- shape normalize ----
+      
         if x_in.ndim == 2:
             B = x_in.shape[0]
             x = x_in.view(B, self.D_g, self.F_0)
@@ -609,7 +593,6 @@ class APPNPHead(nn.Module):
         else:
             raise ValueError("x_in must be (B,V,F0) or (B,V*F0)")
 
-        # ---- MLP path (base logits) ----
         H0 = F.dropout(F.relu(self.lin1(x.reshape(x.size(0), -1))),
                        p=dropout_p, training=self.training)
         Z0 = self.lin2(H0)  # [B, C]
@@ -617,44 +600,26 @@ class APPNPHead(nn.Module):
         if self.stream_mode == "mlp":
             return None, H0, Z0, 0  # keep identical semantics
 
-        # ---- Graph propagation on shared, pre-normalized S ----
         if A_dense is None:
             raise ValueError("APPNPHead requires A_dense (pre-normalized dense adjacency).")
         if not isinstance(A_dense, torch.Tensor):
             A_dense = torch.tensor(A_dense, dtype=torch.float32, device=x.device)
         else:
             A_dense = A_dense.to(x.device, dtype=torch.float32)
-
-        # Treat incoming A_dense as S = D^{-1/2} A D^{-1/2} (no re-normalization here)
+       
         S = A_dense  # [V, V]
-
-        # Personalized PageRank style propagation on feature space
+ 
         X0 = x.mean(dim=0)  # [V, F0]  (batch-mean feature as restart)
         X  = X0
         for _ in range(self.K):
             X = (1.0 - self.alpha) * (S @ X) + self.alpha * X0
-
-        # (Available for future fusion, if desired)
+        
         _Xg = X.mean(dim=0, keepdim=True).repeat(B, 1)  # [B, F0]
 
-        # Keep current protocol: classification uses the MLP logits
         return None, H0, Z0, 0
 
-
-# =========================================
-# Baseline 3: GraphSAGE (mean aggregator)
-# =========================================
 class GraphSAGEHead(nn.Module):
-    """
-    Two-layer GraphSAGE (mean aggregator), PyG-free.
-
-    H^1 = σ( mean_aggr(Ã, X) @ W1 )
-    H^2 = σ( mean_aggr(Ã, H^1) @ W2 )
-    where Ã has self-loops and is row-normalized.
-
-    Works with per-sample signals on the same topology.
-    Provide dense adjacency A_dense (V,V). Self-loops are added inside.
-    """
+  
     def __init__(self, D_g, F_0, hidden=64, out_dim=2, stream_mode="fusion"):
         super().__init__()
         self.D_g, self.F_0 = D_g, F_0
@@ -665,7 +630,7 @@ class GraphSAGEHead(nn.Module):
         self.W2 = nn.Linear(hidden, hidden, bias=True)
 
         self.poolsize = 8
-        # Readout + MLP heads (parity with others)
+        
         self.fc1 = nn.Linear(hidden * max(1, (D_g // self.poolsize)), hidden)
         self.fc_head_gcn = nn.Linear(hidden, out_dim)
 
@@ -689,10 +654,7 @@ class GraphSAGEHead(nn.Module):
         return x
 
     def forward(self, x_in, dropout_p, _L_unused, _theta_unused, A_dense=None):
-        """
-        x_in:    (B,V,F0) or (B, V*F0)
-        A_dense: (V,V) dense adjacency (no self-loops required; added inside)
-        """
+       
         if x_in.ndim == 2:
             B = x_in.shape[0]
             x = x_in.view(B, self.D_g, self.F_0)
@@ -702,7 +664,6 @@ class GraphSAGEHead(nn.Module):
             raise ValueError("x_in must be (B,V,F0) or (B,V*F0)")
 
         if self.stream_mode == "mlp":
-            # mirror MLP path for completeness
             x_nn = F.relu(self.nn_fc1(x.reshape(x.size(0), -1)))
             x_nn = F.dropout(x_nn, p=dropout_p, training=self.training)
             x_nn = F.relu(self.nn_fc2(x_nn))
