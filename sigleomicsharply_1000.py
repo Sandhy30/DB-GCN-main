@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import os
-# Must be set before PyTorch/ cuBLAS is initialized
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 import sys
@@ -34,12 +33,9 @@ try:
 except Exception:
     sns = None
 
-# -------------------- import local libs --------------------
-# -------------------- import local libs (robust) --------------------
 import os, sys
 from pathlib import Path
 
-# Resolve directories relative to THIS file (best practice)
 ROOT = Path(__file__).resolve().parent
 LIB  = ROOT / "sharplylib"
 
@@ -58,10 +54,7 @@ from torch.utils.data import WeightedRandomSampler
 from layermodel import Graph_GCN
 import utilsdata
 
-# =========================================================
-#                     Core helpers
-# =========================================================
-# --- Make printing robust on Windows consoles that aren't UTF-8 ---
+
 import sys, builtins
 try:
     # Prefer UTF-8 for stdout/stderr if supported (Py3.7+)
@@ -70,8 +63,7 @@ try:
 except Exception:
     pass
 
-# Fallback: if the console can't encode emojis, drop un-encodable chars instead of crashing
-__orig_print = print
+
 def print(*args, **kwargs):
     try:
         return __orig_print(*args, **kwargs)
@@ -109,7 +101,7 @@ def _normf(x, nd=8):
     try: return round(float(x), nd)
     except Exception: return x
 
-# ===== Excel helpers: safe append to sheets without losing past runs =====
+
 from pathlib import Path
 
 from pathlib import Path
@@ -146,7 +138,7 @@ def export_runtime_memory_by_k(df: pd.DataFrame, out_dir: str, tag: str = ""):
     and some of time_sec, rss_mb, vram_mb (will ignore missing ones).
     """
     if df is None or df.empty:
-        print("⚠️ No runtime rows to summarize."); return
+        print(" No runtime rows to summarize."); return
     os.makedirs(out_dir, exist_ok=True)
 
     # Keep only relevant columns if present
@@ -162,7 +154,7 @@ def export_runtime_memory_by_k(df: pd.DataFrame, out_dir: str, tag: str = ""):
     # Aggregate by (db, stream, omic, filter, K)
     grp_cols = [c for c in ["database","stream_mode","num_omic","filter_type","k"] if c in d.columns]
     if not grp_cols:
-        print("⚠️ Missing grouping columns for runtime summary."); return
+        print(" Missing grouping columns for runtime summary."); return
 
     agg = (d.groupby(grp_cols, dropna=False)
              .agg(time_sec_mean=("time_sec","mean") if "time_sec" in d.columns else ("k","size"),
@@ -220,7 +212,6 @@ def export_runtime_memory_by_k(df: pd.DataFrame, out_dir: str, tag: str = ""):
                         dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-# --------- plotting (PDF) ----------
 def ensure_pdf(save_path: str, fallback_name: str, OutputDir: str) -> str:
     if not save_path:
         save_path = os.path.join(OutputDir, fallback_name)
@@ -245,7 +236,7 @@ def _append_csv(csv_path: str, df_new: pd.DataFrame):
 
 def generate_confusion_matrix(y_true, y_pred, labels=None, OutputDir=".", save_path=None):
     if sns is None:
-        print("⚠️ Skipping confusion matrix: seaborn not available.")
+        print(" Skipping confusion matrix: seaborn not available.")
         return
 
     y_true = np.asarray(y_true)
@@ -254,12 +245,12 @@ def generate_confusion_matrix(y_true, y_pred, labels=None, OutputDir=".", save_p
     # Auto-derive labels if not provided
     if labels is None:
         if y_true.size == 0 and y_pred.size == 0:
-            print("⚠️ Skipping confusion matrix: no data.")
+            print(" Skipping confusion matrix: no data.")
             return
         labels = sorted(np.unique(np.concatenate([y_true.ravel(), y_pred.ravel()])))
 
     if len(labels) == 0:
-        print("⚠️ Skipping confusion matrix: no labels/classes found.")
+        print(" Skipping confusion matrix: no labels/classes found.")
         return
 
     cm = confusion_matrix(y_true, y_pred, labels=labels)
@@ -295,7 +286,7 @@ def generate_confusion_matrix(y_true, y_pred, labels=None, OutputDir=".", save_p
     save_path = ensure_pdf(save_path, "confusion_matrix.pdf", OutputDir)
     plt.savefig(save_path, dpi=600, bbox_inches="tight")
     plt.close(fig)
-    print(f"✅ Confusion matrix saved to {save_path}")
+    print(f" Confusion matrix saved to {save_path}")
 
 
 def plot_roc_curve(fpr, tpr, roc_auc, num_classes, OutputDir, save_path=None):
@@ -311,11 +302,11 @@ def plot_roc_curve(fpr, tpr, roc_auc, num_classes, OutputDir, save_path=None):
     plt.tight_layout()
     plt.savefig(save_path, dpi=600, bbox_inches='tight')
     plt.close()
-    print(f"✅ ROC curve saved to {save_path}")
+    print(f" ROC curve saved to {save_path}")
 
 def compute_theta(k, filter_type):
     if k < 1:
-        raise ValueError(f"❌ K must be at least 1. Given: {k}")
+        raise ValueError(f" K must be at least 1. Given: {k}")
     if filter_type == "low":
         theta = [1 - i / k for i in range(k + 1)]
     elif filter_type == "high":
@@ -335,14 +326,10 @@ def compute_theta(k, filter_type):
         # (optional) repurpose comb to 'even mask' if you still want it
         theta = [1 if i % 2 == 0 else 0 for i in range(k + 1)]
     else:
-        raise ValueError(f"❌ Unknown filter type: {filter_type}")
+        raise ValueError(f"  Unknown filter type: {filter_type}")
     assert len(theta) == k + 1
     return theta
 
-
-# =========================================================
-#                         CLI
-# =========================================================
 
 parser = argparse.ArgumentParser()
 
@@ -401,7 +388,6 @@ parser.add_argument('--ncv_log_runtime', action='store_true',
 parser.add_argument('--ncv_log_perclass', action='store_true',
                     help='Log per-class metrics for each inner/outer fold (precision/recall/F1/F2).')
 
-# ---- sweeps & overrides (NEW CLI flags) ----
 parser.add_argument('--filters', type=str, default='',
     help='Comma-separated filter types to sweep, e.g. "all,band_reject,low"')
 parser.add_argument('--batch_sizes', type=str, default='',
@@ -415,12 +401,8 @@ parser.add_argument('--k_by_filter', type=str, default='',
 
 args = parser.parse_args()
 
-# ------------------------------------------------------------------
-# Run mode tag for clarity across files (single vs nested)
-# ------------------------------------------------------------------
 CV_MODE = "nested" if args.ncv else "single"
 
-# -------------------- parsed sweeps & K overrides (NEW) --------------------
 def _parse_list(s: str, cast):
     """Parse 'a,b,c' or 'a;b;c' into [cast(a), cast(b), cast(c)]."""
     if not s:
@@ -428,7 +410,6 @@ def _parse_list(s: str, cast):
     parts = [p.strip() for p in s.replace(';', ',').split(',')]
     return [cast(p) for p in parts if p]
 
-# ---------- Build sweep grids with correct precedence ----------
 # Filters
 if args.filters:
     filter_types = _parse_list(args.filters, str)
@@ -457,7 +438,6 @@ elif getattr(args, "lr", None) is not None:
 else:
     lr_values = [0.001]
 
-# ---- K per filter: defaults + optional overrides from --k_by_filter ----
 _default_k_map = {
    
         "all": [1, 2, 4, 6, 8, 10],  # Any K value works for all-pass
@@ -495,15 +475,12 @@ def get_k_values(filter_type: str):
     if filter_type in _default_k_map:
         return _default_k_map[filter_type]
     raise ValueError(f"Invalid filter type: {filter_type}")
-## =========================================================
-#                Setup / paths / device
-# =========================================================
+
 _stream_map = {'fusion': 'fusion', 'gcn_only': 'gcn', 'mlp_only': 'mlp'}
 stream_mode = _stream_map[args.stream_mode]
 print(f"[Ablation] stream_mode = {stream_mode}")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ---------- paths + data loading + outputs ----------
 def _final_path(p: str) -> str:
     p = str(p).strip().strip('"').strip("'")
     p = p.replace('"', '').replace("'", '')
@@ -515,20 +492,20 @@ DataRoot  = _final_path(args.data_root)
 print(f"[Paths] OutputDir (final) = {OutputDir!r}")
 print(f"[Paths] DataRoot  (final) = {DataRoot!r}")
 
-# quick guard to catch WinError 123 style issues early
+
 if OutputDir.startswith('"') or OutputDir.startswith("'"):
     raise ValueError(f"OutputDir still has a leading quote: {OutputDir!r}")
 if DataRoot.startswith('"') or DataRoot.startswith("'"):
     raise ValueError(f"DataRoot still has a leading quote: {DataRoot!r}")
 
-# --- robust output-dir creation (handles file collisions on Windows) ---
+
 def _ensure_directory(p: str) -> str:
     p = os.path.normpath(p)
     if os.path.exists(p) and not os.path.isdir(p):
         # A file is blocking this path; use an alternate folder
         base, _ = os.path.splitext(p)
         alt = base + "_dir"
-        print(f"⚠️ A file exists at output_dir path: {p}. Using alternate folder: {alt}")
+        print(f" A file exists at output_dir path: {p}. Using alternate folder: {alt}")
         p = alt
     os.makedirs(p, exist_ok=True)
     try:
@@ -541,7 +518,7 @@ def _ensure_directory(p: str) -> str:
 OutputDir = _ensure_directory(OutputDir)
 
 
-# ========================== Data paths & setup ==========================
+
 def get_data_paths(database: str, data_root: str):
     database = str(database).lower().strip()
     expression_data_path      = os.path.join(data_root, "common_expression_data.tsv")
@@ -575,14 +552,14 @@ def get_data_paths(database: str, data_root: str):
     return (expression_data_path, cnv_data_path, expression_variance_file, shuffle_index_path,
             adjacency_matrix_file, non_null_index_path)
 
-# Resolve data files (use cleaned DataRoot)
+
 (expression_data_path, cnv_data_path, expression_variance_file, shuffle_index_path,
  adjacency_matrix_file, non_null_index_path) = get_data_paths(args.database, DataRoot)
 
 print("Using adjacency matrix:", adjacency_matrix_file)
 print("Using non-null index file:", non_null_index_path)
 
-# ---------------------- Load raw data tables ----------------------
+
 print("Loading raw data tables...")
 if args.num_omic == 1:
     expr_all_df = utilsdata.load_singleomic_data(expression_data_path)
@@ -597,26 +574,20 @@ labels_all = (expr_all_df['icluster_cluster_assignment'].values - 1).astype(np.i
 out_dim = int(np.unique(labels_all).size)
 print("Classes:", out_dim)
 
-# ---------------------- Normalization policy ----------------------
-# Applied LATER inside each fold with train-only statistics:
-# from utilsdata import normalize_by_train
-NORM_METHOD = "zscore"   # options: "zscore", "minmax", "robust"
+
 print(f"[Norm] method={NORM_METHOD} (per-fold, train-only stats)")
 
-# =================== DB-GCN channel configuration ===================
+
 F_0    = int(args.num_omic)   # channels per gene (1=Expr, 2=CNV+Expr)
 D_g    = int(args.num_gene)   # number of genes used this run
 
-# Graph stream (you can tune later)
-CL1_F  = 96
-FC1_F  = 384
+CL1_F  = 5
+FC1_F  = 32
 FC2_F  = 0
+NN_FC1 = 256
+NN_FC2 = 32
 
-# MLP stream
-NN_FC1 = 384
-NN_FC2 = 128
 
-# -------------------------- Output dirs ---------------------------
 hyperparam_dir = os.path.join(OutputDir, "hyperparameter_tuning")
 bestmodel_dir  = os.path.join(OutputDir, "bestmodel")
 for _d in (OutputDir, hyperparam_dir, bestmodel_dir):
@@ -626,11 +597,11 @@ for _d in (OutputDir, hyperparam_dir, bestmodel_dir):
     except Exception:
         pass
 
-# ------------------------- Result files --------------------------
+
 csv_file_path = os.path.join(OutputDir, "00finalcoexsingle2000.csv")
 per_fold_csv  = os.path.join(OutputDir, "per_fold_metrics.csv")
 
-# ---------------------- Runtime/memory helpers --------------------
+
 try:
     import psutil
     _psutil_ok = True
@@ -638,9 +609,7 @@ try:
 except Exception:
     _psutil_ok = False
     process = None
-# =========================================================
-#     One inner split eval (deterministic, leak-free)
-# =========================================================
+
 def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null_index_path,
                         args, stream_mode, device, out_dim,
                         F_0, CL1_F, FC1_F, FC2_F, NN_FC1, NN_FC2,
@@ -651,7 +620,7 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
     from torch.utils.data import WeightedRandomSampler
     t0 = time.perf_counter()
 
-    # ---------- normalize/coerce hyperparams ----------
+   
     filt = str(filt).strip().strip('"').strip("'")
     k = int(k); bs = int(bs); dp = float(dp); lr = float(lr)
     if k < 1:
@@ -660,12 +629,12 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
     if log_runtime and torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
-    # --- leak-free gene selection (TRAIN ONLY) ---
+   
     gene_list, gene_idx = utilsdata.select_top_genes_from_train_fold(
         expr_all_df, non_null_index_path, train_idx, args.num_gene
     )
 
-    # --- build data for this split ---
+   
     if args.num_omic == 1:
         A_sel, X_all, y_all, _ = utilsdata.build_fold_data_singleomics(
             expr_all_df, adjacency_matrix_file, gene_list, gene_idx,
@@ -677,16 +646,15 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
             singleton=args.singleton, non_null_index_path=non_null_index_path
         )
 
-    # ========= NEW: tiny sanity checks (shape/channels) BEFORE normalization =========
+   
     # Expect X_all with shape (N, G, C). If (N, G), promote to (N, G, 1).
     assert X_all.ndim in (2, 3), f"Unexpected X_all shape: {X_all.shape}"
     if X_all.ndim == 2:
         X_all = X_all[:, :, None]
     assert X_all.shape[2] == int(args.num_omic), \
         f"Channel mismatch: X_all has C={X_all.shape[2]} but num_omic={args.num_omic}"
-    # ================================================================================
-
-    # ========= Train-only normalization (per gene, per channel) =========
+  
+    #Train-only normalization (per gene, per channel) 
     norm_method = globals().get("NORM_METHOD", "zscore")
     X_all, _norm_stats = utilsdata.normalize_by_train(
         X_all, train_index=np.asarray(train_idx, dtype=int), method=norm_method
@@ -696,9 +664,9 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
     assert X_all.ndim == 3, f"Post-norm X_all should be 3D, got {X_all.shape}"
     assert X_all.shape[2] == int(args.num_omic), \
         f"Post-norm channel mismatch: C={X_all.shape[2]} vs num_omic={args.num_omic}"
-    # ===================================================================
+  
 
-    # --- Laplacian / theta (skip for MLP stream) ---
+  
     if stream_mode == "mlp":
         L_list, theta = None, None
     else:
@@ -714,7 +682,7 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
         L_list = [L_torch]
         theta = compute_theta(k, filt)
 
-    # --- split tensors ---
+  
     Xtr_np = X_all[train_idx].astype(np.float32, copy=False)
     Xva_np = X_all[val_idx].astype(np.float32, copy=False)
 
@@ -726,7 +694,6 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
     pin = torch.cuda.is_available()
     g = torch.Generator().manual_seed(int(data_seed))
 
-    # ----- class-balanced sampler for TRAIN ONLY -----
     y_train_np = y_tr.cpu().numpy()
     cls_counts = np.bincount(y_train_np, minlength=out_dim).astype(np.float32)
     cls_counts[cls_counts == 0] = 1.0
@@ -753,7 +720,6 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
         num_workers=0, pin_memory=pin
     )
 
-    # --- model ---
     net_params = [F_0, len(gene_list), CL1_F, k, FC1_F, FC2_F, NN_FC1, NN_FC2, out_dim]
     net = Graph_GCN(net_params, stream_mode=stream_mode).to(device)
 
@@ -763,14 +729,12 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
             if m.bias is not None:
                 nn.init.zeros_(m.bias)
     net.apply(_weight_init)
-
-    # ---- class-weighted loss (from y_tr) ----
     with torch.no_grad():
         counts = torch.bincount(y_tr, minlength=out_dim).clamp_min(1)
         inv = 1.0 / counts.float()
         class_weights = (inv / inv.sum() * out_dim).to(device=device, dtype=torch.float32)
 
-    # ---- optimizer + scheduler + loss ----
+
     lr_this = 1e-3 if (stream_mode == "mlp") else float(lr)
     optimizer = optim.Adam(net.parameters(), lr=lr_this, weight_decay=1e-5)
     criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.02)
@@ -778,7 +742,7 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
         optimizer, T_max=int(args.epochs), eta_min=1e-6
     )
 
-    # --- train ---
+  
     for _ in range(int(args.epochs)):
         train_model(tr_loader, net, optimizer, criterion, device, dp, L_list, theta)
         scheduler.step()
@@ -806,7 +770,7 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
 
     sel_score = {"macro_f1": macro_f1, "accuracy": acc, "macro_auc": macro_auc}[args.score]
 
-    # --- deterministic save dir tag ---
+ 
     run_tag = (
         f"db-{args.database}_mode-{stream_mode}_omic-{args.num_omic}"
         f"_filt-{filt}_K-{k}_bs-{bs}_dp-{dp}_lr-{lr}_seed-{int(data_seed)}"
@@ -814,7 +778,7 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
     save_dir = os.path.join(args.output_dir, "ncv_cache", run_tag)
     os.makedirs(save_dir, exist_ok=True)
 
-    # ---- persist split artifacts (CSV/NPY only; no Excel) ----
+   
     try:
         np.save(os.path.join(save_dir, "train_idx.npy"), np.asarray(train_idx, dtype=np.int64))
         np.save(os.path.join(save_dir, "val_idx.npy"),   np.asarray(val_idx,   dtype=np.int64))
@@ -835,9 +799,9 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
             )
         print(f"🧾 Saved split artifacts to: {save_dir}")
     except Exception as e_save:
-        print(f"⚠️ Skipped saving split artifacts: {e_save}")
+        print(f" Skipped saving split artifacts: {e_save}")
 
-    # ---- optional: save model weights ----
+   
     try:
         if getattr(args, "savemodel", False):
             ckpt = {
@@ -868,9 +832,9 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
             torch.save(ckpt, ckpt_path)
             print(f"💾 Weights saved → {ckpt_path}")
     except Exception as e_ckpt:
-        print(f"⚠️ Could not save weights: {e_ckpt}")
+        print(f" Could not save weights: {e_ckpt}")
 
-    # ---- runtime / memory stats ----
+   
     aux = {}
     if log_runtime:
         if torch.cuda.is_available():
@@ -881,7 +845,7 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
             torch.cuda.max_memory_allocated() / (1024**2)
         ) if torch.cuda.is_available() else 0.0
 
-    # --- free big tensors ---
+  
     del X_tr, y_tr, X_va, y_va, tr_loader, va_loader
     del X_all, y_all
     if stream_mode != "mlp":
@@ -913,7 +877,6 @@ def nested_cv_run(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null_index
     ncv_dir = os.path.join(args.output_dir, "nested_cv")
     os.makedirs(ncv_dir, exist_ok=True)
 
-    # Helper: append CSV (header only if new)
     def _append_csv(df: pd.DataFrame, path: str):
         path_dir = os.path.dirname(path)
         if path_dir and not os.path.exists(path_dir):
@@ -926,15 +889,12 @@ def nested_cv_run(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null_index
         np.savetxt(os.path.join(ncv_dir, f"outer_fold_{outer_fold}_train_idx.txt"), outer_tr_idx, fmt="%d")
         np.savetxt(os.path.join(ncv_dir, f"outer_fold_{outer_fold}_test_idx.txt"),  outer_te_idx, fmt="%d")
 
-        # ----- inner search on outer_tr_idx -----
         kf_inner = StratifiedKFold(
             n_splits=K_inner, shuffle=True, random_state=int(args.seed) + outer_fold
         )
         grid_records = []
         inner_dir = os.path.join(ncv_dir, f"outer_fold_{outer_fold}", "inner_splits")
         os.makedirs(inner_dir, exist_ok=True)
-
-        # Precompute inner splits (indices against FULL dataset)
         inner_split_cache = []
         for inner_id, (inner_tr_local, inner_va_local) in enumerate(
             kf_inner.split(outer_tr_idx, y_all_labels[outer_tr_idx]), start=1
@@ -1006,7 +966,6 @@ def nested_cv_run(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null_index
                                 f"{args.score}_std":  float(np.std(inner_scores, ddof=1)) if len(inner_scores) > 1 else 0.0,
                             })
 
-        # ---- choose best config by inner mean of selection metric ----
         score_col = f"{args.score}_mean"
         grid_df = pd.DataFrame(grid_records)
         if grid_df.empty:
@@ -1016,22 +975,18 @@ def nested_cv_run(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null_index
         if grid_df.empty:
             raise RuntimeError(f"All inner-CV '{score_col}' values are NaN/inf.")
 
-        # Save the inner grid for this outer fold (for audit)
         grid_csv_path = os.path.join(ncv_dir, f"outer_fold_{outer_fold}_inner_grid.csv")
         grid_df.sort_values(by=[score_col], ascending=False).to_csv(grid_csv_path, index=False)
 
         grid_df = grid_df.sort_values(by=[score_col], ascending=False).reset_index(drop=True)
         best = grid_df.iloc[0].to_dict()
         search_rows.extend(grid_df.to_dict("records"))
-
-        # ---- retrain best on outer-train, test on outer-test ----
         best_filt = str(best["filter_type"]).strip().strip('"').strip("'")
         best_k    = int(best["k"])
         best_bs   = int(best["batch_size"])
         best_dp   = float(best["dropout"])
         best_lr   = float(best["lr"])
 
-        # One evaluation pass (stats only; this already normalizes per-inner)
         _, rep, acc, macro_f1, macro_auc, _ = _ncv_eval_one_split(
             expr_all_df, cnv_all_df, adjacency_matrix_file, non_null_index_path,
             args, stream_mode, device, out_dim,
@@ -1041,8 +996,6 @@ def nested_cv_run(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null_index
             log_runtime=False, process=None
         )
 
-        # ----- (Optional) artifacts + plots with explicit rebuild (kept minimal) -----
-        # Rebuild to keep the saved artifacts consistent with chosen best
         try:
             gene_list, gene_idx = utilsdata.select_top_genes_from_train_fold(
                 expr_all_df, non_null_index_path, outer_tr_idx, args.num_gene
@@ -1058,27 +1011,22 @@ def nested_cv_run(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null_index
                     singleton=args.singleton, non_null_index_path=non_null_index_path
                 )
 
-            # ========= NEW: sanity checks BEFORE normalization =========
             assert X_all.ndim in (2, 3), f"Unexpected X_all shape: {X_all.shape}"
             if X_all.ndim == 2:
                 X_all = X_all[:, :, None]
             assert X_all.shape[2] == int(args.num_omic), \
                 f"Channel mismatch: X_all has C={X_all.shape[2]} but num_omic={args.num_omic}"
-            # ==========================================================
-
-            # ===== Train-only normalization for OUTER (method from global) =====
+        
             norm_method = globals().get("NORM_METHOD", "zscore")  # set to "minmax" if needed
             X_all, _stats = utilsdata.normalize_by_train(
                 X_all, train_index=np.asarray(outer_tr_idx, dtype=int), method=norm_method
             )
 
-            # Optional: re-assert after normalization (defensive)
+        
             assert X_all.ndim == 3, f"Post-norm X_all should be 3D, got {X_all.shape}"
             assert X_all.shape[2] == int(args.num_omic), \
                 f"Post-norm channel mismatch: C={X_all.shape[2]} vs num_omic={args.num_omic}"
-            # ===================================================================
 
-            # Build Laplacian/theta unless mlp stream
             if stream_mode == "mlp":
                 L_list, theta = None, None
             else:
@@ -1102,7 +1050,6 @@ def nested_cv_run(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null_index
                         nn.init.zeros_(m.bias)
             net.apply(_wi)
 
-            # ---- class-weighted loss (from y_train) ----
             with torch.no_grad():
                 y_train = torch.tensor(y_all[outer_tr_idx], dtype=torch.long)
                 counts = torch.bincount(y_train, minlength=out_dim).clamp_min(1)
@@ -1125,7 +1072,6 @@ def nested_cv_run(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null_index
 
             pin = torch.cuda.is_available()
 
-            # ---- balanced sampler for outer-train ----
             y_train_np = y_train.cpu().numpy()
             cls_counts = np.bincount(y_train_np, minlength=out_dim).astype(np.float32)
             cls_counts[cls_counts == 0] = 1.0
@@ -1195,7 +1141,7 @@ def nested_cv_run(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null_index
                 torch.save(ckpt, ckpt_path)
 
         except Exception as _e:
-            print(f"⚠️ Skipped outer-fold artifacts (OK for speed): {_e}")
+            print(f" Skipped outer-fold artifacts (OK for speed): {_e}")
 
         # ----- per-outer-fold CSV row -----
         per_class = {int(k): v for k, v in rep.items() if str(k).isdigit()}
@@ -1329,7 +1275,7 @@ def export_main_text_tables(outer_df: pd.DataFrame, out_dir: str,
     os.makedirs(out_dir, exist_ok=True)
 
     # small hint for LaTeX users
-    print("ℹ️  LaTeX: include \\usepackage{booktabs} in your preamble for top/mid/bottom rules.")
+    print("  LaTeX: include \\usepackage{booktabs} in your preamble for top/mid/bottom rules.")
 
     if outer_df is None or len(outer_df) == 0:
         empty = pd.DataFrame(columns=["Metric","Mean","Std","n","cv_mode","database","stream_mode","num_omic","num_gene","epochs"])
@@ -1338,7 +1284,7 @@ def export_main_text_tables(outer_df: pd.DataFrame, out_dir: str,
         empty.to_csv(empty_csv, index=False)
         with open(empty_tex, "w", encoding="utf-8") as f:
             f.write(_df_to_latex_simple(empty))
-        print(f"⚠️ export_main_text_tables: received empty DataFrame. Wrote placeholders to {out_dir}.")
+        print(f" export_main_text_tables: received empty DataFrame. Wrote placeholders to {out_dir}.")
         return
 
     # guard
@@ -1467,7 +1413,7 @@ def export_main_text_tables(outer_df: pd.DataFrame, out_dir: str,
         combined.to_csv(combined_csv, index=False)
         with open(combined_tex, "w", encoding="utf-8") as f:
             f.write(_df_to_latex_simple(combined))
-        print(f"✅ Main-text tables saved in {out_dir} (per-mode + combined).")
+        print(f" Main-text tables saved in {out_dir} (per-mode + combined).")
     else:
         tbl = _summary_for(df)
         csv_path = os.path.join(out_dir, "main_text_macro_and_class.csv")
@@ -1475,13 +1421,8 @@ def export_main_text_tables(outer_df: pd.DataFrame, out_dir: str,
         tbl.to_csv(csv_path, index=False)
         with open(tex_path, "w", encoding="utf-8") as f:
             f.write(_df_to_latex_simple(tbl))
-        print(f"✅ Main-text table saved in {out_dir}.")
+        print(f" Main-text table saved in {out_dir}.")
 
-## =========================================================
-#                MAIN: NCV or single-CV
-# =========================================================
-
-# Use parsed grids from CLI (fallback to defaults if user didn't pass them)
 if not filter_types:
     filter_types = ["impulse_high", "impulse_low", "low", "high", "all", "band", "band_reject", "comb"]
 
@@ -1500,7 +1441,6 @@ print("[Grid] filters=", filter_types,
       "| dropouts=", dropout_values,
       "| lrs=", lr_values)
 
-# -------------------- NESTED CV --------------------
 if args.ncv:
     print(">>> Running Nested Cross-Validation (outer=assessment, inner=selection)…")
 
@@ -1522,11 +1462,10 @@ if args.ncv:
     outer_df["num_gene"]    = args.num_gene
     outer_df["epochs"]      = args.epochs
 
-    # (You asked to keep outputs to two CSVs overall for single-CV mode;
-    # nested-CV artifacts are handled elsewhere in your pipeline, so we exit.)
+
     sys.exit(0)
 
-# -------------------- SINGLE CV (only two CSV outputs) --------------------
+# SINGLE CV (only two CSV outputs) 
 print(">>> Running single CV (original) …")
 
 expected_cols = [
@@ -1594,7 +1533,6 @@ if not df_existing.empty and "accuracy" in df_existing.columns and df_existing["
         best_result  = df_existing.loc[idx].to_dict()
         best_accuracy = float(df_existing.loc[idx, "accuracy"])
 
-# ----------------- precompute single-CV splits ONCE (deterministic) and SAVE them -----------------
 kf = StratifiedKFold(n_splits=args.num_folds, shuffle=True, random_state=int(args.seed))
 y_all_labels = (expr_all_df['icluster_cluster_assignment'].values - 1).astype(np.int64)
 
@@ -1622,7 +1560,6 @@ with open(os.path.join(singlecv_dir, "MANIFEST.txt"), "w", encoding="utf-8") as 
         f"stream_mode={stream_mode}\n"
         f"num_gene={int(args.num_gene)}\n"
     )
-# -----------------------------------------------------------------------------------------------
 
 from torch.utils.data import WeightedRandomSampler
 
@@ -1653,10 +1590,10 @@ for raw_filter_type in filter_types:
                     )
 
                     if combination_key in existing_combinations:
-                        print(f"✅ Skipping already processed combo: {combination_key}")
+                        print(f" Skipping already processed combo: {combination_key}")
                         continue
 
-                    print(f"\n🔹 Processing: db={args.database} | stream={stream_mode} | "
+                    print(f"\n Processing: db={args.database} | stream={stream_mode} | "
                           f"filter={filter_type} | K={k} | G={args.num_gene} | "
                           f"BS={batch_size} | dp={dropout_value} | lr={lr}")
 
@@ -1674,26 +1611,20 @@ for raw_filter_type in filter_types:
                     for fold, (train_index, val_index) in enumerate(splits, start=1):
                         fold_t0 = time.perf_counter()
                         print(f"  Fold {fold}…")
-
-                        # ---------------------- leak-free gene selection (TRAIN ONLY) ----------------------
+                   
                         gene_list, gene_idx = utilsdata.select_top_genes_from_train_fold(
                             expr_all_df, non_null_index_path, train_index, args.num_gene
                         )
                         G_fold = len(gene_list)
-
-                        # -------- SAVE PER-FOLD GENE LIST + FOLD META (only once per fold) --------
                         csv_path = os.path.join(gene_dir_root, f"fold_{fold:02d}_genes.csv")
                         xlsx_path = os.path.join(gene_dir_root, f"fold_{fold:02d}_genes.xlsx")
                         meta_train_path = os.path.join(fold_meta_dir, f"fold_{fold:02d}_train_idx.npy")
                         meta_val_path   = os.path.join(fold_meta_dir, f"fold_{fold:02d}_val_idx.npy")
                         manifest_txt    = os.path.join(gene_dir_root, f"fold_{fold:02d}_manifest.txt")
 
-                        # Write once per fold: if CSV already exists, we assume this fold is saved.
                         if not os.path.exists(csv_path):
-                            # CSV (robust)
                             pd.Series(gene_list, name="gene").to_csv(csv_path, index=False)
 
-                            # Optional XLSX (silently skip if engine missing)
                             try:
                                 with pd.ExcelWriter(xlsx_path, engine="xlsxwriter") as writer:
                                     pd.DataFrame({"gene": gene_list}).to_excel(writer, index=False, sheet_name="genes")
@@ -1725,9 +1656,7 @@ for raw_filter_type in filter_types:
                             except Exception:
                                 pass
                             print(f"   🧾 Saved gene list + meta → {gene_dir_root}")
-                        # -------------------------------------------------------------------------------
-
-                        # -------------------------- build data for this fold --------------------------
+                    
                         if args.num_omic == 1:
                             A_sel, X_all, y_all, _ = utilsdata.build_fold_data_singleomics(
                                 expr_all_df, adjacency_matrix_file, gene_list, gene_idx,
@@ -1739,7 +1668,6 @@ for raw_filter_type in filter_types:
                                 singleton=args.singleton, non_null_index_path=non_null_index_path
                             )
 
-                        # ------- NEW: shape/channel assertions (pre-normalization) -------
                         assert X_all.ndim in (2, 3), f"Unexpected X_all shape: {X_all.shape}"
                         if X_all.ndim == 2:
                             X_all = X_all[:, :, None]
@@ -1748,8 +1676,7 @@ for raw_filter_type in filter_types:
                         if not first_fold_info_printed:
                             print(f"ℹ️  First-fold tensor shape: X_all={X_all.shape} (N,G,C), F_0={F_0}")
                             first_fold_info_printed = True
-                        # ------------------------------------------------------------------
-
+        
                         # Laplacian for this fold (sparse, [0,1]-scaled)
                         if stream_mode == "mlp":
                             L_list = None
@@ -1764,7 +1691,6 @@ for raw_filter_type in filter_types:
                             L_torch = utilsdata.sparse_mx_to_torch_sparse_tensor(L_sp).to(device)
                             L_list = [L_torch]
 
-                        # ===== TRAIN-ONLY NORMALIZATION per global NORM_METHOD =====
                         X_all_norm, _norm_stats = utilsdata.normalize_by_train(
                             X_all, train_index=np.asarray(train_index, dtype=int), method=NORM_METHOD
                         )
@@ -1775,8 +1701,7 @@ for raw_filter_type in filter_types:
 
                         Xtr_np = X_all_norm[train_index].astype(np.float32, copy=False)
                         Xva_np = X_all_norm[val_index].astype(np.float32, copy=False)
-                        # ===========================================================
-
+                     
                         X_train = torch.tensor(Xtr_np, dtype=torch.float32)
                         y_train = torch.tensor(y_all[train_index], dtype=torch.long)
                         X_val   = torch.tensor(Xva_np, dtype=torch.float32)
@@ -1785,7 +1710,6 @@ for raw_filter_type in filter_types:
                         _gen = torch.Generator().manual_seed(int(args.seed) + fold)
                         _pin = torch.cuda.is_available()
 
-                        # ---------- class-balanced sampler (TRAIN ONLY, softened) ----------
                         y_train_np = y_train.cpu().numpy()
                         cls_counts = np.bincount(y_train_np, minlength=out_dim).astype(np.float32)
                         cls_counts[cls_counts == 0] = 1.0
@@ -1813,8 +1737,6 @@ for raw_filter_type in filter_types:
                             batch_size=int(batch_size), shuffle=False,
                             num_workers=0, pin_memory=_pin
                         )
-
-                        # ---------- model (per fold) ----------
                         net_params_fold = [F_0, G_fold, CL1_F, int(k), FC1_F, FC2_F, NN_FC1, NN_FC2, out_dim]
                         net = Graph_GCN(net_params_fold, stream_mode=stream_mode).to(device)
 
@@ -1825,16 +1747,12 @@ for raw_filter_type in filter_types:
                                     nn.init.zeros_(m.bias)
                         net.apply(_weight_init)
 
-                        # ---------- class-weighted loss (from y_train) ----------
                         with torch.no_grad():
                             counts = torch.bincount(y_train, minlength=out_dim).clamp_min(1)
                             inv = 1.0 / counts.float()
                             class_weights = (inv / inv.sum() * out_dim).to(device)
 
-                        # LR tweak for MLP-only
                         lr_this = 1e-3 if (stream_mode == "mlp") else float(lr)
-
-                        # ---------- optimizer, loss (label smoothing), warmup→cosine LR ----------
                         optimizer = optim.AdamW(net.parameters(), lr=lr_this, weight_decay=3e-5)
 
                         try:
@@ -1854,13 +1772,10 @@ for raw_filter_type in filter_types:
                         cosine = CosineAnnealingLR(optimizer, T_max=cosine_epochs, eta_min=1e-6)
                         scheduler = SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[warmup_epochs])
 
-                        # ---------- train ----------
                         for _epoch in range(int(args.epochs)):
                             train_model(train_loader, net, optimizer, criterion,
                                         device, float(dropout_value), L_list, theta)
                             scheduler.step()
-
-                        # ---------- final fold evaluation ----------
                         y_true, y_scores = test_model(val_loader, net, device, L_list, theta)
                         y_pred = np.argmax(y_scores, axis=1)
 
@@ -1896,7 +1811,6 @@ for raw_filter_type in filter_types:
                             "cv_mode": "single", "epochs": int(args.epochs), "num_gene": int(args.num_gene)
                         })
 
-                        # cleanup
                         del X_train, y_train, X_val, y_val, train_loader, val_loader
                         del X_all, y_all, A_sel
                         if stream_mode != "mlp":
@@ -1904,8 +1818,6 @@ for raw_filter_type in filter_types:
                         del net, optimizer, criterion, sampler
                         if torch.cuda.is_available():
                             torch.cuda.empty_cache()
-
-                    # ----- aggregate folds -----
                     acc_mean   = float(np.mean(fold_accs))
                     acc_std    = float(np.std(fold_accs,   ddof=1)) if len(fold_accs) > 1 else 0.0
                     mF1_mean   = float(np.mean(fold_mF1s))
@@ -1916,7 +1828,6 @@ for raw_filter_type in filter_types:
                     mRec_std   = float(np.std(fold_mRecs,  ddof=1)) if len(fold_mRecs) > 1 else 0.0
                     print(f"   Fold-wise: Acc {acc_mean:.4f} ± {acc_std:.4f} | mF1 {mF1_mean:.4f} ± {mF1_std:.4f}")
 
-                    # write/update per-fold CSV (append + de-dupe by identifying columns)
                     per_fold_df = pd.DataFrame(fold_rows)
                     key_cols = ["database","stream_mode","num_omic","filter_type","k","num_genes",
                                 "batch_size","dropout","lr","fold","cv_mode","epochs","num_gene"]
@@ -1958,7 +1869,6 @@ for raw_filter_type in filter_types:
                     comb_time_sec = time.perf_counter() - comb_start
                     peak_vram_mb  = (torch.cuda.max_memory_allocated() / (1024**2)) if torch.cuda.is_available() else 0.0
 
-                    # --- summary row (ONLY write to csv_file_path) ---
                     new_result = {
                         "database": args.database, "stream_mode": stream_mode, "num_omic": int(args.num_omic),
                         "filter_type": filter_type, "k": int(k), "num_genes": int(args.num_gene),
@@ -1980,17 +1890,15 @@ for raw_filter_type in filter_types:
                     # Append then de-dupe (float-stable)
                     df_existing = pd.concat([df_existing, pd.DataFrame([new_result])], ignore_index=True)
 
-                    # round float keys
                     for _col in ("dropout", "lr"):
                         if _col in df_existing.columns:
                             df_existing[_col] = pd.to_numeric(df_existing[_col], errors="coerce").round(8)
 
-                    # int keys -> Int64
+    
                     for _col in ("k", "num_genes", "batch_size", "epochs", "num_gene", "num_omic"):
                         if _col in df_existing.columns:
                             df_existing[_col] = pd.to_numeric(df_existing[_col], errors="coerce").astype("Int64")
 
-                    # str keys -> strip quotes/space
                     for _col in ("database", "stream_mode", "filter_type", "cv_mode"):
                         if _col in df_existing.columns:
                             df_existing[_col] = df_existing[_col].astype(str).str.strip().str.strip('"').str.strip("'")
@@ -2002,26 +1910,18 @@ for raw_filter_type in filter_types:
                     df_existing = df_existing.sort_index().drop_duplicates(subset=sum_keys, keep="last")
                     df_existing.to_csv(csv_file_path, index=False)
 
-                    # Keep existing_combinations in sync (normalize floats)
                     existing_combinations.add((
                         args.database, stream_mode, int(args.num_omic),
                         filter_type, int(k), int(args.num_gene), int(batch_size),
                         round(float(dropout_value), 8), round(float(lr), 8)
                     ))
 
-                    print(f"✅ CSVs updated →\n   per-fold: {per_fold_csv}\n   pooled:   {csv_file_path}\n"
+                    print(f" CSVs updated →\n   per-fold: {per_fold_csv}\n   pooled:   {csv_file_path}\n"
                           f"   Pooled Acc={avg_accuracy:.4f} | Macro-F1={macro_f1:.4f} | "
                           f"mean Acc={acc_mean:.4f}±{acc_std:.4f}")
 
 
-# =========================================================
-#     EXPORT PER-FOLD + SUMMARY TO A SINGLE EXCEL
-#     + SELECT BEST ROW FOR CURRENT CONTEXT
-#     + WEIGHTS MANIFEST (+ copy best weights if found)
-# =========================================================
 
-# --- extra imports this block needs ---
-import shutil
 from glob import glob
 import matplotlib.pyplot as plt
 
@@ -2031,21 +1931,18 @@ def _ensure_pdf_from_noext(path_no_ext: str) -> str:
         return path_no_ext
     return f"{path_no_ext}.pdf"
 
-# =========================================================
-#   SUMMARY EXCEL + ABLATION + MAIN-TEXT TABLE + MANIFEST
-# =========================================================
+
 
 # Defensive default for df_summary referenced after try/except
 df_summary = df_existing.copy() if 'df_existing' in globals() and isinstance(df_existing, pd.DataFrame) else pd.DataFrame()
 
 try:
-    # ---- Guard columns for summary table ----
+
     if 'df_existing' not in globals() or not isinstance(df_existing, pd.DataFrame):
         df_existing = pd.DataFrame()
     if "cv_mode" not in df_existing.columns:
         df_existing["cv_mode"] = "single"
 
-    # ---- Load per-fold CSV (if present), else build an empty shell ----
     if os.path.exists(per_fold_csv) and os.path.getsize(per_fold_csv) > 0:
         df_folds_all = pd.read_csv(per_fold_csv)
         df_folds_all.columns = df_folds_all.columns.str.strip()
@@ -2060,14 +1957,12 @@ try:
     if "cv_mode" not in df_folds_all.columns:
         df_folds_all["cv_mode"] = "single"
 
-    # ---- Restrict to current context (db/stream/omics) ----
     df_folds = df_folds_all[
         (df_folds_all.get("database") == args.database) &
         (df_folds_all.get("stream_mode") == stream_mode) &
         (pd.to_numeric(df_folds_all.get("num_omic"), errors="coerce") == int(args.num_omic))
     ].copy()
 
-    # ---- Numeric coercions for fold metrics ----
     num_cols = ["k","num_genes","batch_size","dropout","lr","fold",
                 "accuracy","macro_precision","macro_recall","macro_f1",
                 "fold_time_sec","rss_mb","vram_peak_mb_sofar","epochs","num_gene","num_omic"]
@@ -2075,7 +1970,6 @@ try:
         if c in df_folds.columns:
             df_folds[c] = pd.to_numeric(df_folds[c], errors="coerce")
 
-    # ---- Long view for folds (stable sort by id columns) ----
     id_cols = ["database","stream_mode","num_omic","filter_type","k",
                "num_genes","batch_size","dropout","lr","fold","cv_mode","epochs","num_gene"]
     metric_cols = ["accuracy","macro_precision","macro_recall","macro_f1",
@@ -2089,7 +1983,6 @@ try:
     else:
         df_folds_long = df_folds
 
-    # ---- Wide view for folds (accuracy/prec/rec per fold) ----
     folds_wide = None
     if not df_folds_long.empty and "fold" in df_folds_long.columns:
         try:
@@ -2111,7 +2004,6 @@ try:
         except Exception:
             folds_wide = None
 
-    # ---- Summary sheet = df_existing with pretty mean±std columns ----
     df_summary = df_existing.copy()
     if "cv_mode" not in df_summary.columns:
         df_summary["cv_mode"] = "single"
@@ -2137,8 +2029,6 @@ try:
     _pm(df_summary, "macro_precision_mean", "macro_precision_std", "precision_mean_std")
     _pm(df_summary, "macro_recall_mean", "macro_recall_std", "recall_mean_std")
     _pm(df_summary, "macro_f1_mean", "macro_f1_std", "macro_f1_mean_std")
-
-    # ---- Choose selection metric (macro_f1 preferred, else accuracy) ----
     select_metric = args.score if hasattr(args, "score") and (args.score in df_summary.columns) else (
         "macro_f1" if "macro_f1" in df_summary.columns else "accuracy"
     )
@@ -2173,7 +2063,6 @@ try:
         df_best_sheet = df_ranked[keep_cols].copy()
         best_result = df_ranked.iloc[0].to_dict()
 
-    # ---- Write Excel with multiple sheets ----
     xlsx_path = os.path.join(OutputDir, "results_with_folds.xlsx")
     try:
         with pd.ExcelWriter(xlsx_path, engine="xlsxwriter") as writer:
@@ -2194,15 +2083,12 @@ try:
             if not df_best_sheet.empty:
                 df_best_sheet.to_excel(writer, index=False, sheet_name="best_single")
 
-    print(f"📊 Excel written: {xlsx_path}")
+    print(f" Excel written: {xlsx_path}")
 
-    # ===== PATCH 2: Dual-stream ablation summary + concise main-text table =====
     try:
         if os.path.exists(csv_file_path) and os.path.getsize(csv_file_path) > 0:
             df_all = pd.read_csv(csv_file_path)
             df_all.columns = df_all.columns.str.strip()
-
-            # Filter to current db/omics and single-CV rows
             mask = (
                 (df_all.get("database") == args.database) &
                 (pd.to_numeric(df_all.get("num_omic"), errors="coerce") == int(args.num_omic)) &
@@ -2210,12 +2096,11 @@ try:
             )
             df_ctx = df_all[mask].copy()
 
-            # Make sure we can sort numerically
+        
             for c in ["accuracy","macro_f1","macro_auc"]:
                 if c in df_ctx.columns:
                     df_ctx[c] = pd.to_numeric(df_ctx[c], errors="coerce")
 
-            # --- (A) Dual-stream ablation: pick best per stream_mode ---
             ablation_rows = []
             for sm in ["fusion", "gcn", "mlp"]:
                 sub = df_ctx[df_ctx.get("stream_mode") == sm].copy()
@@ -2243,9 +2128,9 @@ try:
             ablation_df = pd.DataFrame(ablation_rows)
             ablation_csv = os.path.join(OutputDir, "ablation_streams_summary.csv")
             ablation_df.to_csv(ablation_csv, index=False)
-            print(f"✅ Dual-stream ablation table written: {ablation_csv}")
+            print(f" Dual-stream ablation table written: {ablation_csv}")
 
-            # --- (B) Concise main-text table for single-CV ---
+    
             if not df_ctx.empty:
                 sort_cols = []
                 if "macro_f1" in df_ctx.columns: sort_cols.append("macro_f1")
@@ -2287,10 +2172,9 @@ try:
                 print(f"✅ Concise single-CV main-text table written: {main_csv}")
 
     except Exception as e:
-        print(f"⚠️ Patch 2 (ablation/main-text) skipped due to: {e}")
-    # ===== END PATCH 2 =====
+        print(f" Patch 2 (ablation/main-text) skipped due to: {e}")
 
-    # ---- Persist best row as a quick text artifact ----
+
     best_model_txt = os.path.join(OutputDir, "bestmodel.txt")
     if best_result is not None:
         with open(best_model_txt, "w", encoding="utf-8") as f:
@@ -2298,14 +2182,12 @@ try:
             for k, v in best_result.items():
                 if isinstance(v, (str, int, float, np.integer, np.floating)):
                     f.write(f"{k}: {v}\n")
-        print(f"✅ Best model (single-CV context) saved to {best_model_txt}")
+        print(f Best model (single-CV context) saved to {best_model_txt}")
 
 except Exception as e:
-    print(f"⚠️ Excel export failed: {e}")
+    print(f" Excel export failed: {e}")
 
-# =========================================================
-#     BEST RESULT SUMMARY + SAFE ARTIFACT COPY + WEIGHTS
-# =========================================================
+
 
 if 'best_result' not in globals() or best_result is None:
     try:
@@ -2338,9 +2220,9 @@ if best_result:
         for key, value in best_result.items():
             if isinstance(value, (str, int, float, np.integer, np.floating)):
                 f.write(f"{key}: {value}\n")
-    print(f"✅ Best model configuration saved to {best_model_txt}")
+    print(f" Best model configuration saved to {best_model_txt}")
 
-    print("\n✅ Best Overall Configuration (current context):")
+    print("\n Best Overall Configuration (current context):")
     keys_pretty = ["database","stream_mode","num_omic","cv_mode",
                    "filter_type","k","num_genes","batch_size","dropout","lr",
                    "accuracy","macro_f1","macro_auc"]
@@ -2356,11 +2238,10 @@ if best_result:
     os.makedirs(bestmodel_dir, exist_ok=True)
     existing_best_pdfs = glob(os.path.join(bestmodel_dir, "best_*.pdf"))
     if existing_best_pdfs:
-        print(f"📂 {len(existing_best_pdfs)} best_* PDFs already present in {bestmodel_dir}.")
+        print(f" {len(existing_best_pdfs)} best_* PDFs already present in {bestmodel_dir}.")
 else:
-    print("❌ No best result found.")
+    print(" No best result found.")
 
-# --------------------- WEIGHTS MANIFEST ---------------------
 try:
     manifest_rows = []
 
@@ -2401,9 +2282,9 @@ try:
     weights_manifest = pd.DataFrame(manifest_rows)
     manifest_csv = os.path.join(OutputDir, "weights_manifest.csv")
     weights_manifest.to_csv(manifest_csv, index=False)
-    print(f"💾 Weights manifest written: {manifest_csv}")
+    print(f" Weights manifest written: {manifest_csv}")
 
-    # Try to copy the matching best weights into bestmodel/
+ 
     def _match_best_single_cv_weight(row_dict):
         """Build the run_tag we used during single-CV saving and try to match it."""
         try:
@@ -2425,13 +2306,11 @@ try:
             if candidate:
                 best_weight_src = sorted(candidate)[0]
 
-        # Fallback: outer-best NCV
         if not best_weight_src and os.path.isdir(ncv_root):
             candidates = glob(os.path.join(ncv_root, "outer_fold_*", "best_outer_artifacts", "weights_final.pt"))
             if candidates:
                 best_weight_src = sorted(candidates)[0]
 
-        # Optional extra fallback: any inner NCV checkpoint
         if not best_weight_src and os.path.isdir(ncv_cache_root):
             candidates = glob(os.path.join(ncv_cache_root, "*", "weights_final.pt"))
             if candidates:
@@ -2441,25 +2320,23 @@ try:
         dst = os.path.join(bestmodel_dir, "best_weights.pt")
         try:
             shutil.copy2(best_weight_src, dst)
-            print(f"✅ Best weights copied to: {dst}")
+            print(f" Best weights copied to: {dst}")
         except Exception as e:
-            print(f"⚠️ Could not copy best weights: {e}")
+            print(f" Could not copy best weights: {e}")
     else:
-        print("⚠️ No matching weights file found for the best configuration (this is OK if --savemodel was not used).")
+        print(" No matching weights file found for the best configuration (this is OK if --savemodel was not used).")
 
 except Exception as e:
-    print(f"⚠️ Weights manifest/copy step skipped: {e}")
+    print(f" Weights manifest/copy step skipped: {e}")
 
-# =========================================================
-#                   Visualization from CSV
-# =========================================================
+
 results_csv = csv_file_path if os.path.exists(csv_file_path) else os.path.join(OutputDir, "00finalcoexsingle2000.csv")
 
 if os.path.exists(results_csv) and os.path.getsize(results_csv) > 0:
     df_results = pd.read_csv(results_csv)
     df_results.columns = df_results.columns.str.strip()
 else:
-    print(f"⚠️ No results CSV found at {results_csv}. Creating an empty DataFrame.")
+    print(f" No results CSV found at {results_csv}. Creating an empty DataFrame.")
     df_results = pd.DataFrame(columns=[
         "database","stream_mode","num_omic",
         "filter_type","k","num_genes","batch_size","dropout","lr",
@@ -2469,10 +2346,10 @@ else:
 needed = {"database","stream_mode","num_omic","filter_type","k","num_genes","batch_size","dropout","lr","accuracy"}
 missing = needed - set(df_results.columns)
 if missing:
-    print(f"⚠️ Missing columns in results CSV: {sorted(list(missing))}. Plots may be limited.")
+    print(f" Missing columns in results CSV: {sorted(list(missing))}. Plots may be limited.")
 
 if df_results.empty or not {"database","stream_mode","num_omic","filter_type"}.issubset(df_results.columns):
-    print("❌ No data available for plotting. Skipping visualization.")
+    print(" No data available for plotting. Skipping visualization.")
 else:
     df_view = df_results[
         (df_results.get("database") == args.database) &
@@ -2481,7 +2358,7 @@ else:
     ].copy()
 
     if df_view.empty:
-        print(f"⚠️ No rows for db={args.database}, stream={stream_mode}, num_omic={args.num_omic}. Skipping plots.")
+        print(f" No rows for db={args.database}, stream={stream_mode}, num_omic={args.num_omic}. Skipping plots.")
     else:
         for col in ["k","batch_size","dropout","lr","accuracy"]:
             if col in df_view.columns:
@@ -2500,14 +2377,14 @@ else:
             pdf_path = _ensure_pdf_from_noext(fig_path_no_ext)
             plt.savefig(pdf_path, dpi=1200, bbox_inches="tight")
             plt.close()
-            print(f"✅ Plot saved: {pdf_path}")
+            print(f" Plot saved: {pdf_path}")
             if is_best:
                 best_pdf = os.path.join(bestmodel_dir, "best_" + os.path.basename(pdf_path))
                 os.makedirs(bestmodel_dir, exist_ok=True)
                 shutil.copy2(pdf_path, best_pdf)
-                print(f"✅ Best plot copied to bestmodel: {best_pdf}")
+                print(f" Best plot copied to bestmodel: {best_pdf}")
 
-        # ----- 2D: Accuracy vs K (per filter) -----
+       
         for ft in df_view["filter_type"].dropna().unique():
             df_ft = df_view[df_view["filter_type"] == ft]
             if not {"k","accuracy"}.issubset(df_ft.columns) or df_ft.empty:
@@ -2525,7 +2402,7 @@ else:
                 is_best=(ft == best_filter)
             )
 
-        # ----- 2D: Combined Accuracy vs K (all filters) -----
+        # 2D: Combined Accuracy vs K (all filters) 
         plt.figure(figsize=(10, 8))
         plotted_any = False
         y_min, y_max = np.inf, -np.inf
@@ -2555,7 +2432,7 @@ else:
             is_best=False
         )
 
-        # ----- Helper to construct 3D surface arrays -----
+    
         def _3d_surface(df, idx_col, col_col, val_col="accuracy"):
             pv = (df.groupby([idx_col, col_col])[val_col]
                     .mean()
@@ -2568,7 +2445,7 @@ else:
             Z = pv.values.astype(float)
             return X, Y, Z
 
-        # ----- 3D: Accuracy vs K & Batch Size -----
+        #  3D Accuracy vs K & Batch Size
         for ft in df_view["filter_type"].dropna().unique():
             df_ft = df_view[df_view["filter_type"] == ft]
             if not {"k","batch_size","accuracy"}.issubset(df_ft.columns) or df_ft.empty:
@@ -2576,7 +2453,7 @@ else:
             try:
                 X, Y, Z = _3d_surface(df_ft, idx_col="k", col_col="batch_size", val_col="accuracy")
             except Exception as e:
-                print(f"⚠️ Skipping 3D (K×Batch) for {ft}: {e}")
+                print(f" Skipping 3D (K×Batch) for {ft}: {e}")
                 continue
 
             fig = plt.figure(figsize=(14, 10))
@@ -2593,13 +2470,13 @@ else:
             pdf_path = _ensure_pdf_from_noext(out_no_ext)
             plt.savefig(pdf_path, dpi=1200, bbox_inches="tight")
             plt.close()
-            print(f"✅ 3D plot (K vs Batch Size) saved for filter {ft}: {pdf_path}")
+            print(f" 3D plot (K vs Batch Size) saved for filter {ft}: {pdf_path}")
             if ft == best_filter:
                 dst = os.path.join(bestmodel_dir, "best_" + os.path.basename(pdf_path))
                 shutil.copy2(pdf_path, dst)
-                print(f"✅ Best 3D plot (K vs Batch Size) copied to bestmodel: {dst}")
+                print(f" Best 3D plot (K vs Batch Size) copied to bestmodel: {dst}")
 
-        # ----- 3D: Accuracy vs K & Dropout -----
+        #  3DAccuracy vs K & Dropout
         for ft in df_view["filter_type"].dropna().unique():
             df_ft = df_view[df_view["filter_type"] == ft]
             if not {"k","dropout","accuracy"}.issubset(df_ft.columns) or df_ft.empty:
@@ -2607,7 +2484,7 @@ else:
             try:
                 X, Y, Z = _3d_surface(df_ft, idx_col="k", col_col="dropout", val_col="accuracy")
             except Exception as e:
-                print(f"⚠️ Skipping 3D (K×Dropout) for {ft}: {e}")
+                print(f" Skipping 3D (K×Dropout) for {ft}: {e}")
                 continue
 
             fig = plt.figure(figsize=(14, 10))
@@ -2624,13 +2501,13 @@ else:
             pdf_path = _ensure_pdf_from_noext(out_no_ext)
             plt.savefig(pdf_path, dpi=1200, bbox_inches="tight")
             plt.close()
-            print(f"✅ 3D plot (K vs Dropout) saved for filter {ft}: {pdf_path}")
+            print(f" 3D plot (K vs Dropout) saved for filter {ft}: {pdf_path}")
             if ft == best_filter:
                 dst = os.path.join(bestmodel_dir, "best_" + os.path.basename(pdf_path))
                 shutil.copy2(pdf_path, dst)
-                print(f"✅ Best 3D plot (K vs Dropout) copied to bestmodel: {dst}")
+                print(f" Best 3D plot (K vs Dropout) copied to bestmodel: {dst}")
 
-        # ----- 3D: Accuracy vs K & Learning Rate -----
+       
         for ft in df_view["filter_type"].dropna().unique():
             df_ft = df_view[df_view["filter_type"] == ft]
             if not {"k","lr","accuracy"}.issubset(df_ft.columns) or df_ft.empty:
@@ -2638,7 +2515,7 @@ else:
             try:
                 X, Y, Z = _3d_surface(df_ft, idx_col="k", col_col="lr", val_col="accuracy")
             except Exception as e:
-                print(f"⚠️ Skipping 3D (K×LR) for {ft}: {e}")
+                print(f" Skipping 3D (K×LR) for {ft}: {e}")
                 continue
 
             fig = plt.figure(figsize=(14, 10))
@@ -2655,11 +2532,11 @@ else:
             pdf_path = _ensure_pdf_from_noext(out_no_ext)
             plt.savefig(pdf_path, dpi=1200, bbox_inches="tight")
             plt.close()
-            print(f"✅ 3D plot (K vs Learning Rate) saved for filter {ft}: {pdf_path}")
+            print(f" 3D plot (K vs Learning Rate) saved for filter {ft}: {pdf_path}")
             if ft == best_filter:
                 dst = os.path.join(bestmodel_dir, "best_" + os.path.basename(pdf_path))
                 shutil.copy2(pdf_path, dst)
-                print(f"✅ Best 3D plot (K vs Learning Rate) copied to bestmodel: {dst}")
+                print(f" Best 3D plot (K vs Learning Rate) copied to bestmodel: {dst}")
 
 # ------------- quick VRAM/RSS recap from summary -------------
 try:
@@ -2670,15 +2547,12 @@ try:
         (df_summary.get("cv_mode") == "single")
     ]
     if not ctx.empty and {"peak_rss_mb","peak_vram_mb"}.issubset(ctx.columns):
-        print("📈 Peak memory (single-CV context): "
+        print(" Peak memory (single-CV context): "
               f"RSS≈{float(ctx['peak_rss_mb'].max()):.1f} MB | "
               f"VRAM≈{float(ctx['peak_vram_mb'].max()):.1f} MB")
 except Exception:
     pass
-## ============================== SHAP PIPELINE (single-CV) ==============================
-# This block builds train_data_all / labels / gene_names / L / best_net and runs SHAP.
 
-# ===================== DROP-IN: SHAP PREP + EXPLAIN (GPU, 3000 samples, ≥20/class) =====================
 import os, glob, warnings, copy
 import numpy as np
 import pandas as pd
@@ -2692,30 +2566,29 @@ from coarsening import graph_laplacian, rescale_to_unit_interval
 warnings.filterwarnings("ignore", category=UserWarning)
 try:
     import shap
-    # new-style maskers (safer memory use)
+  
     _ = shap.maskers
 except Exception as e:
     raise RuntimeError("shap is required. Install in your env:  pip install -U shap") from e
 
-# ------------------ CONFIG ------------------
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Reviewer-7 settings
+
 NUM_SHAP_SAMPLES = 3000     # target total explained samples (cap by n)
-BACKGROUND_K     = 50       # k for background subset (masker)
+BACKGROUND_K     = 30       # k for background subset (masker)
 SAFE_NSAMPLES    = 128      # SHAP internal sampling per instance (keep modest)
 
-# ------------------ OUTPUT DIR ------------------
-# allow driver to override via env (for resamples)
+
 OUTPUT_ROOT = os.environ.get(
     "OUTPUT_ROOT",
     r"/media/rilgpu/RIL_Lab1/Raju_Folder/dd/gsfiltersharply/review2resluts"
 )
-SHAP_OUTPUT_DIR = os.path.join(OUTPUT_ROOT, "sharp")  # keep your "sharp" folder name
+SHAP_OUTPUT_DIR = os.path.join(OUTPUT_ROOT, "sharp")  
 os.makedirs(SHAP_OUTPUT_DIR, exist_ok=True)
-print(f"✅ SHAP outputs will be saved to: {SHAP_OUTPUT_DIR}")
+print(f" SHAP outputs will be saved to: {SHAP_OUTPUT_DIR}")
 
-# ---------- 1) Choose the best (or first) fold for SHAP ----------
+
 per_fold_df = pd.read_csv(per_fold_csv) if os.path.exists(per_fold_csv) else pd.DataFrame()
 if not per_fold_df.empty:
     _best = (globals().get("best_result", {}) or {})
@@ -2730,7 +2603,7 @@ if not per_fold_df.empty:
     best_fold = int(per_fold_df[mask].sort_values("accuracy", ascending=False)["fold"].iloc[0]) if not per_fold_df[mask].empty else 1
 else:
     best_fold = 1
-print(f"ℹ️ Using fold {best_fold:02d} for SHAP preparation.")
+print(f" Using fold {best_fold:02d} for SHAP preparation.")
 
 # ---------- 2) Load gene list + fold indices ----------
 gene_csv     = os.path.join(gene_dir_root, f"fold_{best_fold:02d}_genes.csv")
@@ -2741,7 +2614,7 @@ if not os.path.exists(train_idx_np): raise FileNotFoundError(f"Missing train ind
 gene_list   = pd.read_csv(gene_csv)["gene"].astype(str).tolist()
 train_index = np.load(train_idx_np).astype(int)
 
-# ---------- 3) Build fold data (single vs multi-omics) ----------
+
 if int(args.num_omic) == 1:
     A_sel, X_all, y_all, gene_names = utilsdata.build_fold_data_singleomics(
         expr_all_df, adjacency_matrix_file, gene_list, None,
@@ -2758,7 +2631,7 @@ if X_all.ndim == 2:
     X_all = X_all[:, :, None]
 assert X_all.shape[2] == int(args.num_omic), f"Channel mismatch: C={X_all.shape[2]} vs {args.num_omic}"
 
-# ---------- 3b) Remap train_index to current X_all row space (supports .npy/.csv) ----------
+
 N = int(X_all.shape[0])
 tr_idx = np.asarray(train_index, dtype=int)
 
@@ -2789,10 +2662,10 @@ if need_remap or (non_null_index_path and os.path.exists(non_null_index_path)):
             else:          mapped.append(mi)
         tr_idx = _safe_unique_int(mapped)
         if missing > 0:
-            print(f"🟨 Remap: {missing} train indices not present in current fold; dropped.")
-        print(f"✅ Remapped train_index → {len(tr_idx)} samples (X_all rows: {N})")
+            print(f" Remap: {missing} train indices not present in current fold; dropped.")
+        print(f" Remapped train_index → {len(tr_idx)} samples (X_all rows: {N})")
     except Exception as e:
-        print(f"⚠️ Remap via non_null_index_path failed: {e}. Falling back to clipping.")
+        print(f" Remap via non_null_index_path failed: {e}. Falling back to clipping.")
         tr_idx = _safe_unique_int(tr_idx)
 else:
     tr_idx = _safe_unique_int(tr_idx)
@@ -2801,19 +2674,19 @@ if tr_idx.size == 0:
     raise RuntimeError("After remapping/clipping, train_index is empty. Check fold artifacts alignment.")
 train_index = tr_idx
 
-# ---------- 4) Leak-free normalization (TRAIN only) ----------
+
 X_all_norm, _norm_stats = utilsdata.normalize_by_train(X_all, train_index=train_index, method=NORM_METHOD)
 train_data_all = X_all_norm[train_index].astype(np.float32, copy=False)
 labels         = y_all[train_index].astype(np.int64,  copy=False)
 
-# ---------- 5) Laplacian (normalized + rescaled to [0,1]) ----------
+# Laplacian (normalized + rescaled to [0,1]) 
 A_max = float(A_sel.data.max()) if hasattr(A_sel, "data") and A_sel.data.size > 0 else 0.0
 A_norm = A_sel if A_max == 0.0 else (A_sel / A_max)
 L_sp   = graph_laplacian(A_norm, normalized=True)
 L_sp   = rescale_to_unit_interval(L_sp)     # [0,1]
 L      = [utilsdata.sparse_mx_to_torch_sparse_tensor(L_sp).to(device)]
 
-# ---------- 6) Instantiate predictor; load weights if exist; else quick warmup ----------
+# Instantiate predictor, load weights if exist; else quick warmup
 _best = (globals().get("best_result", {}) or {})
 best_filter  = str(_best.get("filter_type", "low")).strip()
 best_k       = int(_best.get("k", 14))
@@ -2834,13 +2707,13 @@ if os.path.isdir(weights_dir):
         try:
             best_net.load_state_dict(torch.load(ck, map_location=device), strict=False)
             loaded_ckpt = True
-            print(f"✅ Loaded weights: {ck}")
+            print(f" Loaded weights: {ck}")
             break
         except Exception as e:
-            print(f"⚠️ Could not load {ck}: {e}")
+            print(f" Could not load {ck}: {e}")
 
 if not loaded_ckpt:
-    print("🟨 No matching weights found; quick 5-epoch fit on this fold’s train split (for SHAP only).")
+    print(" No matching weights found; quick 5-epoch fit on this fold’s train split (for SHAP only).")
     Xtr = torch.tensor(train_data_all, dtype=torch.float32)   # CPU
     ytr = torch.tensor(labels,        dtype=torch.long)       # CPU
     dl  = DataLoader(
@@ -2870,17 +2743,16 @@ if not loaded_ckpt:
             optimizer.step()
     best_net.eval()
 
-# expose dims for predict wrapper
 D_g = int(D_g_eff)
 F_0 = int(F_0_eff)
-print(f"ℹ️ SHAP base data: train_data_all={train_data_all.shape}, labels={labels.shape}, "
+print(f" SHAP base data: train_data_all={train_data_all.shape}, labels={labels.shape}, "
       f"D_g={D_g}, F_0={F_0}, K={best_k}, filter={best_filter}, dropout={best_dropout}")
 
-# ---------- 7) Prep SHAP inputs ----------
+
 train_data_np   = np.asarray(train_data_all, dtype=np.float32)
 train_labels_np = np.asarray(labels,        dtype=np.int64)
 
-# Flatten (B, V, C) -> (B, V*C) for KernelExplainer stability
+
 if train_data_np.ndim == 3:
     train_data_flat = train_data_np.reshape(train_data_np.shape[0], -1)
 else:
@@ -2903,7 +2775,7 @@ for i in range(n_clusters):
     if idxs.size > 0:
         initial_indices.append(int(idxs[0]))
 initial_indices = np.array(initial_indices, dtype=int)
-print(f"✅ PCA+MiniBatchKMeans selected {len(initial_indices)} diverse centroids.")
+print(f" PCA+MiniBatchKMeans selected {len(initial_indices)} diverse centroids.")
 
 # === STRATIFIED MIN-QUOTA (≥20/class where available), then fill to NUM_SHAP_SAMPLES ===
 required_per_class = 20
@@ -2912,7 +2784,6 @@ rng = np.random.default_rng(42)
 final_indices = set()
 classes = np.unique(train_labels_np)
 
-# 1) take up to required_per_class from each class (random within class)
 under_quota = []  # classes that can't reach 20 in the TRAIN split
 for c in classes:
     idxs = np.where(train_labels_np == c)[0]
@@ -2928,7 +2799,7 @@ for c in classes:
 
 # (optional) note the classes inherently < 20 in TRAIN
 if len(under_quota) > 0:
-    print("🟨 Classes with <20 available in TRAIN split (data scarcity):")
+    print(" Classes with <20 available in TRAIN split (data scarcity):")
     for c, cnt in under_quota:
         print(f"   Class {c:2d}: only {cnt} available")
 
@@ -2944,29 +2815,25 @@ final_indices = final_indices[:min(NUM_SHAP_SAMPLES, n_samples)]  # cap by data 
 
 # save + report
 np.save(os.path.join(SHAP_OUTPUT_DIR, "shap_indices.npy"), final_indices)
-print(f"✅ Final SHAP sample count: {len(final_indices)} "
+print(f" Final SHAP sample count: {len(final_indices)} "
       f"(requested {NUM_SHAP_SAMPLES}; classes with ≥1 sample: {len(set(train_labels_np[final_indices]))})")
 
-print("\n📊 Per-class SHAP sample counts:")
+print("\n Per-class SHAP sample counts:")
 for c in np.unique(train_labels_np):
     cnt = int(np.sum(train_labels_np[final_indices] == c))
     print(f"Class {c:2d}: {cnt:2d} samples")
 
 
-# -------------------- 8) SHAP with GPU-batched predictor --------------------
-# (A) Build small background for masker
 BACKGROUND_K = max(1, int(BACKGROUND_K))
 rng = np.random.default_rng(42)
 bg_indices    = rng.choice(n_samples, min(BACKGROUND_K, n_samples), replace=False)
 background_np = train_data_flat[bg_indices]
 
-# (B) Keep model on GPU; SHAP calls into this predict function.
 best_net_gpu = copy.deepcopy(best_net).to(device).eval()
 L_gpu        = [L[0].to(device)]
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
 
-# (C) GPU predict wrapper with micro-batching
 def gcn_predict_gpu(X_numpy, batch=64):
     with torch.no_grad():
         X = torch.tensor(X_numpy, dtype=torch.float32, device=device)
@@ -2980,20 +2847,19 @@ def gcn_predict_gpu(X_numpy, batch=64):
             outs.append(probs.detach().cpu().numpy())
         return np.concatenate(outs, axis=0)
 
-# (D) Build the explainer using a feature-independent masker (saves memory)
 explainer = shap.KernelExplainer(
     model=gcn_predict_gpu,
     data=background_np,          # pass the NumPy background directly
     l1_reg="num_features(10)"
 )
 
-# clean stale files
+
 for f in glob.glob(os.path.join(SHAP_OUTPUT_DIR, "shap_*.npy")):
     try: os.remove(f)
     except Exception: pass
 open(os.path.join(SHAP_OUTPUT_DIR, "shap_labels.txt"), "w").close()
 
-print("🔁 Computing SHAP values for selected samples (GPU predictions, Kernel SHAP)...")
+print(" Computing SHAP values for selected samples (GPU predictions, Kernel SHAP)...")
 from tqdm import tqdm
 for sample_idx in tqdm(final_indices, desc="🔬 SHAP progress"):
     shap_path = os.path.join(SHAP_OUTPUT_DIR, f"shap_{sample_idx:04d}.npy")
@@ -3006,7 +2872,7 @@ for sample_idx in tqdm(final_indices, desc="🔬 SHAP progress"):
 
         # normalize to a 1D vector
         if isinstance(shap_values, list):
-            # multi-class: list of arrays; average |shap| across classes
+            # multi-class: list of arrays; average shap across classes
             shap_sample = np.abs(np.mean([s[0] for s in shap_values], axis=0))
         elif hasattr(shap_values, "ndim") and shap_values.ndim == 3 and shap_values.shape[0] == 1:
             shap_sample = np.abs(shap_values[0].mean(axis=1))
@@ -3021,9 +2887,8 @@ for sample_idx in tqdm(final_indices, desc="🔬 SHAP progress"):
         with open(os.path.join(SHAP_OUTPUT_DIR, "shap_labels.txt"), "a") as f:
             f.write(f"{sample_idx},{int(train_labels_np[sample_idx])}\n")
     except Exception as e:
-        print(f"❌ SHAP failed for sample {sample_idx}: {e}")
+        print(f" SHAP failed for sample {sample_idx}: {e}")
 
-# ---------- 9) Load SHAP vectors ----------
 shap_files  = sorted(glob.glob(os.path.join(SHAP_OUTPUT_DIR, "shap_*.npy")))
 shap_matrix = []
 for f in shap_files:
@@ -3038,9 +2903,9 @@ if len(shap_matrix) == 0:
     raise RuntimeError("No valid SHAP vectors saved. Check the explainer and inputs.")
 shap_matrix = np.vstack(shap_matrix).astype(np.float32)
 np.save(os.path.join(SHAP_OUTPUT_DIR, "shap_matrix.npy"), shap_matrix)
-print(f"✅ Loaded SHAP matrix: {shap_matrix.shape}")
+print(f" Loaded SHAP matrix: {shap_matrix.shape}")
 
-# ---------- 10) Aggregate to genes (for multi-omics) ----------
+#  Aggregate to genes (for multi-omics) 
 if int(args.num_omic) == 2:
     base_gene_names = sorted(set(n.split('_')[0] for n in gene_names))
     gene_to_indices = defaultdict(list)
@@ -3065,8 +2930,7 @@ else:
 # overwrite with aggregated matrix
 np.save(os.path.join(SHAP_OUTPUT_DIR, "shap_matrix.npy"), shap_matrix_agg)
 
-# ---------- 10b) Save manifest for stability driver ----------
-# labels from the text file (truncate to matrix rows)
+
 label_file_path = os.path.join(SHAP_OUTPUT_DIR, "shap_labels.txt")
 shap_labels = []
 with open(label_file_path, "r") as f:
@@ -3078,11 +2942,11 @@ shap_labels = np.asarray(shap_labels[:shap_matrix_agg.shape[0]], dtype=np.int32)
 np.save(os.path.join(SHAP_OUTPUT_DIR, "shap_labels.npy"), shap_labels)
 np.save(os.path.join(SHAP_OUTPUT_DIR, "gene_names.npy"),  np.asarray(final_gene_names, dtype=object))
 
-# ---------- 11) Save Top-5 genes per class to Excel (you can bump to 10/30 for SI) ----------
+
 NUM_CLASSES = int(np.max(shap_labels)) + 1 if "NUM_CLASSES" not in globals() else NUM_CLASSES
 TOPK = 5 if "NUM_TOP_GENES_PER_CLASS" not in globals() else int(NUM_TOP_GENES_PER_CLASS)
 
-print("📊 Extracting top genes per class...")
+print(" Extracting top genes per class...")
 shap_df = pd.DataFrame(shap_matrix_agg, columns=final_gene_names)
 shap_df["label"] = shap_labels
 
@@ -3091,7 +2955,7 @@ with pd.ExcelWriter(excel_path) as writer:
     for cls in range(NUM_CLASSES):
         df_cls = shap_df[shap_df["label"] == cls].drop(columns="label")
         if df_cls.shape[0] == 0:
-            print(f"⚠️ Skipping Class {cls} — no valid SHAP samples.")
+            print(f" Skipping Class {cls} — no valid SHAP samples.")
             continue
         df_cls = df_cls.dropna(axis=1, how='all')
         mean_shap = df_cls.mean(axis=0).fillna(0.0)
@@ -3099,12 +2963,7 @@ with pd.ExcelWriter(excel_path) as writer:
         pd.DataFrame({"Top Genes": top_genes.index, "Mean SHAP": top_genes.values}).to_excel(
             writer, sheet_name=f"Class_{cls}", index=False
         )
-print(f"✅ Top genes per class saved to {excel_path}")
-# ===================== END DROP-IN =====================
-
-# ===================== END DROP-IN =====================
-
-# =========================================================================================
+print(f" Top genes per class saved to {excel_path}")
 
 import pandas as pd
 import numpy as np
@@ -3152,14 +3011,12 @@ with pd.ExcelWriter(hybrid_excel_path) as writer:
     top_20_by_freq.to_excel(writer, sheet_name="Top_20_by_Frequency", index=False)
     top_20_by_hybrid.to_excel(writer, sheet_name="Top_20_by_Hybrid", index=False)
 
-print(f"✅ Gene ranking comparison saved to {hybrid_excel_path}")
+print(f" Gene ranking comparison saved to {hybrid_excel_path}")
 
-# ---------- NEW: build X_sample_flattened to match `final_gene_names` ----------
-# We want the exact input rows that SHAP explained:
-X_flat_selected = train_data_flat[final_indices]   # shape: (num_samples, V*C)
 
-# If you aggregated SHAP to per-gene (multi-omics), aggregate inputs the same way
-# so the number of columns matches `final_gene_names`.
+X_flat_selected = train_data_flat[final_indices]   
+
+
 if int(args.num_omic) == 2 and 'base_gene_names' in locals() and 'gene_to_indices' in locals():
     X_agg = np.zeros((X_flat_selected.shape[0], len(base_gene_names)), dtype=np.float32)
     for j, g in enumerate(base_gene_names):
@@ -3181,7 +3038,7 @@ if X_sample_flattened.shape[1] != len(final_gene_names):
         f"but final_gene_names has {len(final_gene_names)}. "
         "If you aggregated SHAP to per-gene, aggregate inputs the same way (see code above)."
     )
-# ---------- END NEW PATCH ----------
+
 
 import pandas as pd
 import shap
@@ -3191,10 +3048,10 @@ import os
 def plot_shap_summary_for_rankings(excel_path, shap_matrix, X_sample, OutputDir):
     rankings = ["Top_20_by_SHAP", "Top_20_by_Frequency", "Top_20_by_Hybrid"]
     
-    print("📊 Generating SHAP summary plots for all top 20 rankings...")
+    print(" Generating SHAP summary plots for all top 20 rankings...")
 
     for sheet in rankings:
-        print(f"📂 Processing: {sheet}")
+        print(f" Processing: {sheet}")
         df_top = pd.read_excel(excel_path, sheet_name=sheet)
         top_gene_names = df_top["Gene"].tolist()
 
@@ -3208,7 +3065,7 @@ def plot_shap_summary_for_rankings(excel_path, shap_matrix, X_sample, OutputDir)
 
         # Validate shapes
         if top_shap_values.shape[0] != top_X_sample.shape[0]:
-            raise ValueError(f"❌ Shape mismatch for {sheet}: {top_shap_values.shape} vs {top_X_sample.shape}")
+            raise ValueError(f" Shape mismatch for {sheet}: {top_shap_values.shape} vs {top_X_sample.shape}")
 
         # Create output folder
         plot_dir = os.path.join(OutputDir, sheet)
@@ -3226,7 +3083,7 @@ def plot_shap_summary_for_rankings(excel_path, shap_matrix, X_sample, OutputDir)
         plot_path = os.path.join(plot_dir, "shap_summary.png")
         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
-        print(f"✅ Saved: {plot_path}")
+        print(f" Saved: {plot_path}")
 
 plot_shap_summary_for_rankings(
     excel_path=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
@@ -3239,10 +3096,10 @@ plot_shap_summary_for_rankings(
 def plot_shap_dependence_for_rankings(excel_path, shap_matrix, X_sample, OutputDir):
     rankings = ["Top_20_by_SHAP", "Top_20_by_Frequency", "Top_20_by_Hybrid"]
     
-    print("📊 Generating SHAP dependence plots for top 5 genes in each ranking...")
+    print(" Generating SHAP dependence plots for top 5 genes in each ranking...")
 
     for sheet in rankings:
-        print(f"📂 Processing: {sheet}")
+        print(f" Processing: {sheet}")
         df_top = pd.read_excel(excel_path, sheet_name=sheet)
         top_gene_names = df_top["Gene"].tolist()[:5]  # only top 5
 
@@ -3271,7 +3128,7 @@ def plot_shap_dependence_for_rankings(excel_path, shap_matrix, X_sample, OutputD
             plt.tight_layout()
             plt.savefig(os.path.join(plot_dir, f"shap_dependence_{gene}.png"), dpi=300, bbox_inches='tight')
             plt.close()
-            print(f"✅ Saved dependence plot for {gene} in {sheet}")
+            print(f" Saved dependence plot for {gene} in {sheet}")
 
 plot_shap_dependence_for_rankings(
     excel_path=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
@@ -3286,10 +3143,10 @@ import matplotlib.pyplot as plt
 def plot_shap_heatmaps_for_rankings(excel_path, shap_matrix, OutputDir, X_sample=None, num_samples=10):
     rankings = ["Top_20_by_SHAP", "Top_20_by_Frequency", "Top_20_by_Hybrid"]
     
-    print("📊 Generating SHAP heatmaps for top 20 genes...")
+    print(" Generating SHAP heatmaps for top 20 genes...")
 
     for sheet in rankings:
-        print(f"📂 Processing: {sheet}")
+        print(f" Processing: {sheet}")
         df_top = pd.read_excel(excel_path, sheet_name=sheet)
         top_gene_names = df_top["Gene"].tolist()
 
@@ -3324,7 +3181,7 @@ def plot_shap_heatmaps_for_rankings(excel_path, shap_matrix, OutputDir, X_sample
         plt.tight_layout()
         plt.savefig(os.path.join(plot_dir, "shap_heatmap.png"), dpi=300, bbox_inches='tight')
         plt.close()
-        print(f"✅ Heatmap saved for: {sheet}")
+        print(f" Heatmap saved for: {sheet}")
 plot_shap_heatmaps_for_rankings(
     excel_path=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
     shap_matrix=shap_df.drop(columns="label"),
@@ -3341,11 +3198,11 @@ def plot_shap_force_from_excel(
     sample_index=0
 ):
     """Plot SHAP Force Plot from saved matrix and Excel top gene list."""
-    print(f"📌 Generating SHAP Force Plot using top genes from: {sheet}")
+    print(f" Generating SHAP Force Plot using top genes from: {sheet}")
 
     # Load SHAP matrix
     shap_matrix = np.load(shap_matrix_path)
-    print(f"✅ SHAP matrix shape: {shap_matrix.shape}")
+    print(f" SHAP matrix shape: {shap_matrix.shape}")
 
     # Load top genes from Excel
     df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
@@ -3393,7 +3250,7 @@ def plot_shap_force_from_excel(
     plt.savefig(os.path.join(plot_dir, f"shap_force_sample_{sample_index}.png"), dpi=300, bbox_inches="tight")
     plt.show()
 
-    print(f"✅ Force plot saved for {sheet} → sample {sample_index}")
+    print(f" Force plot saved for {sheet} → sample {sample_index}")
 plot_shap_force_from_excel(
     shap_matrix_path=os.path.join(SHAP_OUTPUT_DIR, "shap_matrix.npy"),
     gene_ranking_excel=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
@@ -3403,853 +3260,3 @@ plot_shap_force_from_excel(
     sheet="Top_20_by_Hybrid",  # You can also do "Top_20_by_SHAP" or "Top_20_by_Frequency"
     sample_index=0  # Sample to visualize
 )
-def plot_shap_importance_heatmap_from_excel(
-    shap_matrix_path,
-    gene_ranking_excel,
-    gene_names,
-    OutputDir,
-    sheet="Top_20_by_Hybrid",
-    num_samples=50  # Number of samples to show
-):
-    """
-    Plots a SHAP importance heatmap from top genes listed in Excel.
-    Supports both single-omics and multi-omics SHAP matrix formats.
-    """
-    print(f"📌 Generating SHAP Importance Heatmap from sheet: {sheet}")
-
-    # Load SHAP matrix
-    shap_matrix = np.load(shap_matrix_path)
-    print(f"✅ SHAP matrix loaded with shape: {shap_matrix.shape}")
-
-    # Load top gene names
-    df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
-    top_gene_names = df_top["Gene"].tolist()
-
-    # Map top genes to indices
-    top_gene_indices = [gene_names.index(g) for g in top_gene_names if g in gene_names]
-
-    # Multi-omics: average across last axis
-    if shap_matrix.ndim == 3:
-        print("📌 Multi-omics SHAP detected: averaging last axis.")
-        top_shap_values = shap_matrix[:, top_gene_indices, :].mean(axis=-1)
-    else:
-        print("📌 Single-omics SHAP detected.")
-        top_shap_values = shap_matrix[:, top_gene_indices]
-
-    # Limit number of samples
-    top_shap_values = top_shap_values[:num_samples, :]
-
-    # Create heatmap DataFrame
-    df_shap = pd.DataFrame(top_shap_values.T, index=[top_gene_names[i] for i in range(len(top_gene_indices))])
-
-    # Plot
-    fig, ax = plt.subplots(figsize=(14, 7))
-    sns.heatmap(
-        df_shap, cmap="coolwarm", center=0, annot=False, linewidths=0.5,
-        cbar_kws={"shrink": 0.5}, xticklabels=[f"S{i}" for i in range(df_shap.shape[1])], ax=ax
-    )
-    ax.set_title(f"SHAP Importance Heatmap ({sheet})", fontsize=16, fontweight="bold")
-    ax.set_ylabel("Top Genes", fontsize=12)
-    ax.set_xlabel("Samples", fontsize=12)
-
-    # Save
-    plot_dir = os.path.join(OutputDir, sheet)
-    os.makedirs(plot_dir, exist_ok=True)
-    plt.savefig(os.path.join(plot_dir, "shap_importance_heatmap.png"), dpi=300, bbox_inches="tight")
-    plt.show()
-
-    print(f"✅ SHAP Importance Heatmap saved to: {os.path.join(plot_dir, 'shap_importance_heatmap.png')}")
-
-plot_shap_importance_heatmap_from_excel(
-    shap_matrix_path=os.path.join(SHAP_OUTPUT_DIR, "shap_matrix.npy"),
-    gene_ranking_excel=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
-    gene_names=final_gene_names,
-    OutputDir=SHAP_OUTPUT_DIR,
-    sheet="Top_20_by_Hybrid"
-)
-
-def plot_correlation_heatmap_from_excel(
-    X_sample,
-    gene_ranking_excel,
-    gene_names,
-    OutputDir,
-    sheet="Top_20_by_Hybrid"
-):
-    """
-    Plots the correlation heatmap of the selected top genes from Excel.
-    Works for both single-omics and multi-omics (2D or 3D input).
-    """
-    print(f"📌 Generating Correlation Heatmap from: {sheet}")
-
-    # Load top genes
-    df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
-    top_gene_names = df_top["Gene"].tolist()
-
-    # Map genes to indices
-    top_gene_indices = [gene_names.index(g) for g in top_gene_names if g in gene_names]
-
-    # Extract features
-    top_gene_features = X_sample[:, top_gene_indices]
-
-    # Handle multi-omics: average across last dimension
-    if top_gene_features.ndim == 3:
-        print(f"📌 Multi-omics data detected: Shape {top_gene_features.shape}, averaging omics dimension.")
-        top_gene_features = top_gene_features.mean(axis=-1)
-
-    # Compute correlation matrix
-    corr_df = pd.DataFrame(top_gene_features, columns=top_gene_names).corr()
-
-    # Plot size based on gene count
-    num_genes = len(top_gene_names)
-    fig_width = min(2 + 0.6 * num_genes, 20)
-    fig_height = min(2 + 0.6 * num_genes, 15)
-
-    plt.figure(figsize=(fig_width, fig_height))
-    sns.heatmap(
-        corr_df,
-        annot=num_genes <= 20,
-        fmt=".2f",
-        cmap="coolwarm",
-        linewidths=0.5,
-        vmin=-1, vmax=1,
-        square=True,
-        cbar_kws={"shrink": 0.8},
-        annot_kws={"size": 8} if num_genes <= 20 else None
-    )
-    plt.xticks(rotation=45, ha="right", fontsize=10)
-    plt.yticks(fontsize=10)
-    plt.title(f"Correlation Heatmap of Top {num_genes} Genes ({sheet})", fontsize=14, fontweight="bold")
-
-    # Save
-    plot_dir = os.path.join(OutputDir, sheet)
-    os.makedirs(plot_dir, exist_ok=True)
-    plot_path = os.path.join(plot_dir, "top_genes_correlation_heatmap.png")
-    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
-    plt.show()
-
-    print(f"✅ Correlation heatmap saved to: {plot_path}")
-
-plot_correlation_heatmap_from_excel(
-    X_sample=X_sample_flattened,
-    gene_ranking_excel=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
-    gene_names=final_gene_names,
-    OutputDir=SHAP_OUTPUT_DIR,
-    sheet="Top_20_by_Hybrid"  # Can also try "Top_20_by_SHAP" or "Top_20_by_Frequency"
-)
-def plot_gene_network_adjacency_from_excel(
-    gene_ranking_excel,
-    gene_names,
-    gene_importance,
-    adj_final,
-    OutputDir,
-    sheet="Top_20_by_Hybrid"
-):
-    """
-    Plots an adjacency-based gene interaction network using top genes from Excel.
-    Only SHAP importance colorbar is shown (no edge weight colorbar).
-    """
-    print(f"📌 Generating Adjacency-Based Gene Network from: {sheet}")
-
-    # Load top genes
-    df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
-    top_gene_names = df_top["Gene"].tolist()
-
-    # Map genes to indices
-    selected_indices = [gene_names.index(g) for g in top_gene_names if g in gene_names]
-
-    # Submatrix from adjacency
-    adj_dense = adj_final.toarray() if hasattr(adj_final, "toarray") else adj_final
-    adj_submatrix = adj_dense[np.ix_(selected_indices, selected_indices)]
-
-    # Threshold edges (top 20%)
-    edge_values = adj_submatrix[np.triu_indices_from(adj_submatrix, k=1)]
-    edge_threshold = np.percentile(edge_values, 80)
-
-    # Construct graph
-    G_adj = nx.Graph()
-    shap_values_selected = {gene: gene_importance[gene_names.index(gene)] for gene in top_gene_names}
-    min_shap, max_shap = min(shap_values_selected.values()), max(shap_values_selected.values())
-
-    for gene in top_gene_names:
-        G_adj.add_node(gene, shap_value=shap_values_selected[gene])
-
-    edge_count = 0
-    for i in range(len(top_gene_names)):
-        for j in range(i + 1, len(top_gene_names)):
-            weight = adj_submatrix[i, j]
-            if weight >= edge_threshold:
-                G_adj.add_edge(top_gene_names[i], top_gene_names[j], weight=weight)
-                edge_count += 1
-
-    if edge_count == 0:
-        print("⚠️ No edges above threshold — consider lowering the percentile.")
-        return
-
-    # SHAP color map
-    cmap_shap = cm.coolwarm
-    norm_shap = mcolors.Normalize(vmin=min_shap, vmax=max_shap)
-    node_colors = [cmap_shap(norm_shap(shap_values_selected[node])) for node in G_adj.nodes()]
-
-    # Scale node sizes by degree
-    degrees = dict(G_adj.degree())
-    node_sizes = np.interp(list(degrees.values()), (min(degrees.values()), max(degrees.values())), (500, 3000))
-
-    # Edge width scaling
-    edge_weights = [G_adj[u][v]["weight"] for u, v in G_adj.edges()]
-    edge_widths = np.interp(edge_weights, (min(edge_weights), max(edge_weights)), (0.5, 4))
-
-    # Layout and plot
-    pos = nx.spring_layout(G_adj, seed=42, k=2.5)
-    fig, ax = plt.subplots(figsize=(16, 14))
-
-    nx.draw_networkx_nodes(G_adj, pos, node_size=node_sizes, node_color=node_colors, edgecolors="black", ax=ax)
-    nx.draw_networkx_edges(G_adj, pos, width=edge_widths, edge_color="gray", alpha=0.7, ax=ax)
-    nx.draw_networkx_labels(G_adj, pos, font_size=12, font_color="black", ax=ax)
-
-    plt.title(f"Gene Network ({sheet})", fontsize=16, fontweight="bold")
-
-    # Only SHAP importance colorbar
-    sm = cm.ScalarMappable(cmap=cmap_shap, norm=norm_shap)
-    sm.set_array([])
-    plt.colorbar(sm, ax=ax, shrink=0.8, label="SHAP Importance")
-
-    # Save
-    plot_dir = os.path.join(OutputDir, sheet)
-    os.makedirs(plot_dir, exist_ok=True)
-    plt.savefig(os.path.join(plot_dir, "gene_network_adjacency.png"), dpi=300, bbox_inches="tight")
-    plt.show()
-
-    print(f"✅ Gene network saved to {os.path.join(plot_dir, 'gene_network_adjacency.png')}")
-
-plot_gene_network_adjacency_from_excel(
-    gene_ranking_excel=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
-    gene_names=final_gene_names,
-    gene_importance=np.mean(shap_matrix_agg, axis=0),  # Mean SHAP as importance
-    adj_final=adj_final,
-    OutputDir=SHAP_OUTPUT_DIR,
-    sheet="Top_20_by_Hybrid"
-)
-
-def plot_gene_network_shap_from_excel(
-    X_sample,
-    gene_ranking_excel,
-    gene_names,
-    gene_importance,
-    OutputDir,
-    sheet="Top_20_by_Hybrid"
-):
-    """
-    Generates a SHAP-based gene correlation network for top genes from Excel.
-    - Nodes: colored by SHAP importance (fixed size).
-    - Edges: correlation-based.
-    - Only SHAP colorbar shown.
-    """
-    print(f"📌 Generating SHAP-Based Gene Network from: {sheet}")
-
-    # Load top genes
-    df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
-    top_gene_names = df_top["Gene"].tolist()
-    top_gene_indices = [gene_names.index(g) for g in top_gene_names if g in gene_names]
-
-    # Extract features
-    top_gene_features = X_sample[:, top_gene_indices]
-    if top_gene_features.ndim == 3:  # Multi-omics case
-        print("📌 Multi-omics detected — averaging omics dimension.")
-        top_gene_features = top_gene_features.mean(axis=-1)
-
-    # SHAP importance
-    shap_values_selected = {gene: gene_importance[gene_names.index(gene)] for gene in top_gene_names}
-    min_shap, max_shap = min(shap_values_selected.values()), max(shap_values_selected.values())
-    if max_shap - min_shap == 0:
-        max_shap += 1e-6
-
-    # Build correlation matrix
-    correlation_matrix = pd.DataFrame(top_gene_features, columns=top_gene_names).corr()
-    edge_values = correlation_matrix.abs().values[np.triu_indices_from(correlation_matrix, k=1)]
-    edge_threshold = np.percentile(edge_values, 50)
-
-    G_shap = nx.Graph()
-    for gene in top_gene_names:
-        G_shap.add_node(gene, shap_value=shap_values_selected[gene])
-
-    edge_count = 0
-    for i in range(len(top_gene_names)):
-        for j in range(i + 1, len(top_gene_names)):
-            corr = correlation_matrix.iloc[i, j]
-            if abs(corr) >= edge_threshold:
-                G_shap.add_edge(top_gene_names[i], top_gene_names[j], weight=abs(corr))
-                edge_count += 1
-
-    if edge_count == 0:
-        print("⚠️ No significant correlations found — lower the edge threshold.")
-        return
-
-    # Layout & visuals
-    cmap_shap = cm.coolwarm
-    norm_shap = mcolors.Normalize(vmin=min_shap, vmax=max_shap)
-    node_colors = [cmap_shap(norm_shap(shap_values_selected[node])) for node in G_shap.nodes()]
-
-    fixed_node_size = 2500
-    edge_weights = [G_shap[u][v]['weight'] for u, v in G_shap.edges()]
-    edge_widths = np.interp(edge_weights, (min(edge_weights), max(edge_weights)), (1, 5)) if edge_weights else []
-
-    pos = nx.spring_layout(G_shap, seed=42, k=4, iterations=100, scale=2)
-    for node in G_shap.nodes():
-        if G_shap.degree(node) == 0:
-            pos[node] = np.random.rand(2) * 2 - 1
-
-    fig, ax = plt.subplots(figsize=(20, 18))
-    nx.draw_networkx_nodes(G_shap, pos, node_size=fixed_node_size, node_color=node_colors, edgecolors="black", ax=ax)
-    nx.draw_networkx_edges(G_shap, pos, width=edge_widths, edge_color="gray", alpha=0.7, ax=ax)
-    nx.draw_networkx_labels(G_shap, pos, font_size=10, font_color="black", font_weight="bold", ax=ax)
-
-    plt.title(f"SHAP-Based Gene Network ({sheet})", fontsize=16, fontweight="bold")
-    sm = cm.ScalarMappable(cmap=cmap_shap, norm=norm_shap)
-    sm.set_array([])
-    plt.colorbar(sm, ax=ax, shrink=0.8, label="SHAP Importance")
-
-    plot_dir = os.path.join(OutputDir, sheet)
-    os.makedirs(plot_dir, exist_ok=True)
-    plt.savefig(os.path.join(plot_dir, "gene_network_shap.png"), dpi=300, bbox_inches="tight")
-    plt.show()
-
-    print(f"✅ SHAP-based gene network saved to: {os.path.join(plot_dir, 'gene_network_shap.png')}")
-
-plot_gene_network_shap_from_excel(
-    X_sample=X_sample_flattened,
-    gene_ranking_excel=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
-    gene_names=final_gene_names,
-    gene_importance=np.mean(shap_matrix_agg, axis=0),
-    OutputDir=SHAP_OUTPUT_DIR,
-    sheet="Top_20_by_Hybrid"
-)
-
-def plot_force_directed_gene_network_from_excel(
-    gene_ranking_excel,
-    gene_names,
-    gene_importance,
-    adj_final,
-    OutputDir,
-    sheet="Top_20_by_Hybrid"
-):
-    """
-    Generates a force-directed gene network using adjacency matrix and SHAP importance.
-    - Fixed node size
-    - Node color = SHAP importance
-    - Edge width = connection strength
-    - ONLY SHAP colorbar shown
-    """
-    print(f"📌 Generating Force-Directed Gene Network from: {sheet}")
-
-    # Load top gene names
-    df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
-    top_gene_names = df_top["Gene"].tolist()
-    selected_indices = [gene_names.index(g) for g in top_gene_names if g in gene_names]
-
-    # Convert sparse to dense if needed
-    adj_dense = adj_final.toarray() if hasattr(adj_final, "toarray") else np.array(adj_final)
-    adj_submatrix = adj_dense[np.ix_(selected_indices, selected_indices)]
-
-    # Edge thresholding
-    edge_values = adj_submatrix[np.triu_indices_from(adj_submatrix, k=1)].flatten()
-    if edge_values.size == 0:
-        print("⚠️ No valid edge values found.")
-        return
-    edge_threshold = np.nanpercentile(edge_values, 50)
-
-    # Construct graph
-    G = nx.Graph()
-    shap_values_selected = {gene: gene_importance[gene_names.index(gene)] for gene in top_gene_names}
-    min_shap, max_shap = min(shap_values_selected.values()), max(shap_values_selected.values())
-    if max_shap - min_shap == 0:
-        max_shap += 1e-6
-
-    for gene in top_gene_names:
-        G.add_node(gene, shap_value=shap_values_selected[gene])
-
-    edge_count = 0
-    for i in range(len(top_gene_names)):
-        for j in range(i + 1, len(top_gene_names)):
-            weight = adj_submatrix[i, j]
-            if weight >= edge_threshold:
-                G.add_edge(top_gene_names[i], top_gene_names[j], weight=weight)
-                edge_count += 1
-
-    if edge_count == 0:
-        print("⚠️ No edges added — consider lowering the threshold.")
-        return
-
-    # Visual settings
-    fixed_node_size = 2500
-    cmap_shap = cm.coolwarm
-    norm_shap = mcolors.Normalize(vmin=min_shap, vmax=max_shap)
-    node_colors = [cmap_shap(norm_shap(shap_values_selected[n])) for n in G.nodes()]
-
-    edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
-    edge_widths = np.interp(edge_weights, (min(edge_weights), max(edge_weights)), (1, 5)) if edge_weights else []
-
-    # Layout and label adjustment
-    pos = nx.spring_layout(G, seed=42, k=3, iterations=300)
-    pos_adjusted = {node: (x, y + 0.05) for node, (x, y) in pos.items()}
-
-    # Plot
-    fig, ax = plt.subplots(figsize=(20, 18))
-    nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=fixed_node_size,
-                           edgecolors="black", cmap=cmap_shap, ax=ax)
-    nx.draw_networkx_edges(G, pos, width=edge_widths, edge_color="gray", alpha=0.7, ax=ax)
-    nx.draw_networkx_labels(G, pos_adjusted, font_size=12, font_color="black", font_weight="bold", ax=ax)
-
-    plt.title(f"Force-Directed Gene Network ({sheet})", fontsize=16, fontweight="bold")
-
-    # SHAP Colorbar only
-    sm = cm.ScalarMappable(cmap=cmap_shap, norm=norm_shap)
-    sm.set_array([])
-    plt.colorbar(sm, ax=ax, shrink=0.8, label="SHAP Importance")
-
-    # Save
-    plot_dir = os.path.join(OutputDir, sheet)
-    os.makedirs(plot_dir, exist_ok=True)
-    plt.savefig(os.path.join(plot_dir, "force_directed_gene_network.png"), dpi=300, bbox_inches="tight")
-    plt.show()
-
-    print(f"✅ Force-directed gene network saved to {os.path.join(plot_dir, 'force_directed_gene_network.png')}")
-plot_force_directed_gene_network_from_excel(
-    gene_ranking_excel=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
-    gene_names=final_gene_names,
-    gene_importance=np.mean(shap_matrix_agg, axis=0),
-    adj_final=adj_final,
-    OutputDir=SHAP_OUTPUT_DIR,
-    sheet="Top_20_by_Hybrid"
-)
-def plot_umap_tsne_from_excel(
-    X_sample,
-    gene_ranking_excel,
-    gene_names,
-    OutputDir,
-    shap_matrix=None,  # Optional: Can also color by SHAP
-    sheet="Top_20_by_Hybrid"
-):
-    """
-    Generates UMAP and t-SNE projections for selected top genes from Excel.
-    Colors by SHAP importance if shap_matrix provided.
-    """
-    print(f"📌 Generating UMAP and t-SNE projections from: {sheet}")
-
-    # Load top genes
-    df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
-    top_gene_names = df_top["Gene"].tolist()
-    top_gene_indices = [gene_names.index(g) for g in top_gene_names if g in gene_names]
-
-    # Subset features
-    top_gene_features = X_sample[:, top_gene_indices]
-
-    # If SHAP matrix given → Color by SHAP Importance
-    if shap_matrix is not None:
-        if shap_matrix.ndim == 3:  # Multi-omics
-            print("📌 Multi-omics detected for SHAP matrix — averaging.")
-            shap_importance = np.abs(shap_matrix).mean(axis=(1, 2))
-        else:
-            shap_importance = np.abs(shap_matrix).mean(axis=1)
-
-        shap_importance = shap_importance[:X_sample.shape[0]]  # Trim if necessary
-        cmap = plt.cm.viridis
-        norm = mcolors.Normalize(vmin=shap_importance.min(), vmax=shap_importance.max())
-        colors = cmap(norm(shap_importance))
-    else:
-        # Default color if no SHAP
-        colors = "blue"
-
-    # Perform UMAP and t-SNE
-    reducer_umap = UMAP(n_neighbors=15, min_dist=0.1, metric='euclidean', random_state=42)
-    reducer_tsne = TSNE(n_components=2, perplexity=15, random_state=42)
-
-    umap_proj = reducer_umap.fit_transform(top_gene_features)
-    tsne_proj = reducer_tsne.fit_transform(top_gene_features)
-
-    # Plot
-    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-
-    axes[0].scatter(umap_proj[:, 0], umap_proj[:, 1], c=colors, edgecolor="black", alpha=0.85, s=80)
-    axes[0].set_title("UMAP Projection (Gene Embeddings)", fontsize=14, fontweight="bold")
-    axes[0].set_xlabel("UMAP 1", fontsize=12)
-    axes[0].set_ylabel("UMAP 2", fontsize=12)
-
-    axes[1].scatter(tsne_proj[:, 0], tsne_proj[:, 1], c=colors, edgecolor="black", alpha=0.85, s=80)
-    axes[1].set_title("t-SNE Projection (Gene Embeddings)", fontsize=14, fontweight="bold")
-    axes[1].set_xlabel("t-SNE 1", fontsize=12)
-    axes[1].set_ylabel("t-SNE 2", fontsize=12)
-
-    # Add colorbar if SHAP was used
-    if shap_matrix is not None:
-        sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-        sm.set_array([])
-        plt.colorbar(sm, ax=axes.ravel().tolist(), shrink=0.75, aspect=30, label="SHAP Importance")
-
-    # Save
-    plot_dir = os.path.join(OutputDir, sheet)
-    os.makedirs(plot_dir, exist_ok=True)
-    plt.savefig(os.path.join(plot_dir, "umap_tsne_projections.png"), dpi=300, bbox_inches="tight")
-    plt.show()
-
-    print(f"✅ UMAP and t-SNE projections saved to {os.path.join(plot_dir, 'umap_tsne_projections.png')}")
-plot_umap_tsne_from_excel(
-    X_sample=X_sample_flattened,
-    gene_ranking_excel=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
-    gene_names=final_gene_names,
-    OutputDir=SHAP_OUTPUT_DIR,
-    shap_matrix=shap_matrix_agg,  # pass aggregated SHAP matrix
-    sheet="Top_20_by_Hybrid"
-)
-def plot_gene_expression_clustering_from_excel(
-    X_sample,
-    gene_ranking_excel,
-    gene_names,
-    OutputDir,
-    sheet="Top_20_by_Hybrid"
-):
-    """
-    Generates a hierarchical clustering heatmap of gene expression levels
-    using top genes from the specified Excel sheet.
-    """
-    print(f"📌 Generating Gene Expression Clustering Heatmap from: {sheet}")
-
-    try:
-        # ✅ Load top genes from Excel
-        df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
-        top_gene_names = df_top["Gene"].tolist()
-        top_gene_indices = [gene_names.index(g) for g in top_gene_names if g in gene_names]
-
-        # ✅ Subset expression data
-        top_gene_features = X_sample[:, top_gene_indices]
-        if top_gene_features.ndim == 3:
-            print("📌 Multi-omics detected: Averaging across last axis.")
-            top_gene_features = top_gene_features.mean(axis=-1)
-
-        if top_gene_features.shape[1] == 0:
-            raise ValueError("❌ No genes available for clustering!")
-
-        # ✅ Compute hierarchical clustering
-        row_dist = pdist(top_gene_features.T, metric='euclidean')
-        row_linkage = sch.linkage(row_dist, method="ward")
-
-        df_expr = pd.DataFrame(top_gene_features, columns=top_gene_names)
-
-        num_genes = len(top_gene_names)
-        label_fontsize = max(8, min(14, 18 - (num_genes // 10)))
-
-        g = sns.clustermap(
-            df_expr,
-            row_linkage=row_linkage, col_cluster=False, row_cluster=True,
-            cmap="coolwarm", annot=False,
-            figsize=(22, 14), linewidths=0.5, linecolor="white",
-            dendrogram_ratio=(0.20, 0.02),
-            cbar_kws={"shrink": 0.4, "aspect": 30},
-            robust=True
-        )
-
-        g.ax_heatmap.set_position([0.35, 0.15, 0.6, 0.7])
-        g.fig.suptitle(f"Gene Expression Clustering Heatmap ({sheet})", fontsize=18, fontweight="bold", y=1.05)
-
-        g.ax_heatmap.set_xticklabels(g.ax_heatmap.get_xmajorticklabels(), fontsize=label_fontsize, rotation=45, ha="right")
-        g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_ymajorticklabels(), fontsize=label_fontsize)
-
-        g.ax_heatmap.set_xlabel("Samples (Patients)", fontsize=16, fontweight="bold", labelpad=12)
-        g.ax_heatmap.set_ylabel("Clustered Genes", fontsize=16, fontweight="bold", labelpad=12)
-
-        g.cax.set_position([0.98, 0.25, 0.02, 0.5])
-
-        # Optional: Separate dendrogram plot
-        fig, ax = plt.subplots(figsize=(6, 12))
-        sch.dendrogram(row_linkage, labels=top_gene_names, orientation='left', ax=ax)
-        ax.set_position([0.05, 0.15, 0.3, 0.7])
-        ax.set_xlabel("Distance", fontsize=12, fontweight="bold")
-        ax.set_ylabel("Genes", fontsize=12, fontweight="bold")
-        plt.title("Hierarchical Clustering Dendrogram", fontsize=14, fontweight="bold")
-
-        # ✅ Save both plots
-        plot_dir = os.path.join(OutputDir, sheet)
-        os.makedirs(plot_dir, exist_ok=True)
-        g.savefig(os.path.join(plot_dir, "gene_expression_clustering.png"), dpi=300, bbox_inches="tight")
-        plt.savefig(os.path.join(plot_dir, "gene_dendrogram_only.png"), dpi=300, bbox_inches="tight")
-        plt.show()
-
-        print(f"✅ Expression clustering saved to: {plot_dir}")
-
-    except Exception as e:
-        print(f"❌ Error in `plot_gene_expression_clustering_from_excel()`: {e}")
-plot_gene_expression_clustering_from_excel(
-    X_sample=X_sample_flattened,
-    gene_ranking_excel=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
-    gene_names=final_gene_names,
-    OutputDir=SHAP_OUTPUT_DIR,
-    sheet="Top_20_by_Hybrid"
-)
-def plot_gene_expression_distribution_from_excel(
-    X_sample,
-    gene_ranking_excel,
-    gene_names,
-    OutputDir,
-    labels,
-    sheet="Top_20_by_Hybrid"
-):
-    """
-    Generates histogram + boxplot + swarm overlays for gene expression distributions.
-    Plots top genes from an Excel sheet. Handles single/multi-omics automatically.
-    """
-    print(f"📌 Generating Gene Expression Distribution from: {sheet}")
-
-    # Load top gene names
-    df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
-    top_gene_names = df_top["Gene"].tolist()
-    top_gene_indices = [gene_names.index(g) for g in top_gene_names if g in gene_names]
-
-    # Subset X_sample
-    top_gene_features = X_sample[:, top_gene_indices]
-    if top_gene_features.ndim == 3:
-        print("📌 Multi-omics detected — averaging last axis.")
-        top_gene_features = top_gene_features.mean(axis=-1)
-
-    expected_length = top_gene_features.shape[0]
-    valid_genes, valid_features = [], []
-
-    for gene, values in zip(top_gene_names, top_gene_features.T):
-        if len(values) == expected_length:
-            valid_genes.append(gene)
-            valid_features.append(values)
-        else:
-            print(f"⚠️ Skipping '{gene}' (length mismatch).")
-
-    if not valid_genes:
-        raise ValueError("❌ No valid genes found after filtering!")
-
-    print(f"✅ Plotting {len(valid_genes)} genes...")
-
-    valid_features = np.array(valid_features).T  # (samples, genes)
-
-    num_genes = len(valid_genes)
-    num_cols = 4
-    num_rows = int(np.ceil(num_genes / num_cols))
-
-    # ----------------------- Histogram + KDE -----------------------
-    fig, axes = plt.subplots(num_rows, num_cols, figsize=(num_cols * 5, num_rows * 3), constrained_layout=True)
-    axes = axes.flatten()
-
-    for i, gene in enumerate(valid_genes):
-        sns.histplot(valid_features[:, i], bins=30, kde=True, color="royalblue", edgecolor="black", ax=axes[i])
-        axes[i].set_title(f"Expression of {gene}", fontsize=14, fontweight="bold")
-        axes[i].set_xlabel("Expression Level", fontsize=12)
-        axes[i].set_ylabel("Frequency", fontsize=12)
-
-    for j in range(i + 1, len(axes)):
-        fig.delaxes(axes[j])
-
-    plot_dir = os.path.join(OutputDir, sheet)
-    os.makedirs(plot_dir, exist_ok=True)
-    plt.savefig(os.path.join(plot_dir, "gene_expression_distribution_histogram.png"), dpi=300, bbox_inches="tight")
-    plt.show()
-    print(f"✅ Histogram + KDE saved to: {plot_dir}")
-
-    # ---------------------- Boxplot + Swarmplot ----------------------
-    fig, axes = plt.subplots(num_rows, num_cols, figsize=(num_cols * 5, num_rows * 4), constrained_layout=True)
-    axes = axes.flatten()
-
-    labels_subset = labels[:valid_features.shape[0]]
-    for i, gene in enumerate(valid_genes):
-        y_values = valid_features[:, i]
-        if len(y_values) != len(labels_subset):
-            print(f"⚠️ Skipping {gene} (label mismatch)")
-            continue
-
-        df = pd.DataFrame({'Expression': y_values, 'Class': labels_subset})
-        sns.boxplot(x='Class', y='Expression', data=df, palette="coolwarm", width=0.6, ax=axes[i])
-        sns.stripplot(x='Class', y='Expression', data=df, color="black", alpha=0.5, size=3, jitter=True, ax=axes[i])
-        axes[i].set_title(f"Expression of {gene}", fontsize=14, fontweight="bold")
-        axes[i].set_xlabel("Class", fontsize=12)
-        axes[i].set_ylabel("Expression Level", fontsize=12)
-
-    for j in range(i + 1, len(axes)):
-        fig.delaxes(axes[j])
-
-    plt.savefig(os.path.join(plot_dir, "gene_expression_distribution_boxplot.png"), dpi=300, bbox_inches="tight")
-    plt.show()
-    print(f"✅ Boxplot + Swarm saved to: {plot_dir}")
-plot_gene_expression_distribution_from_excel(
-    X_sample=X_sample_flattened,
-    gene_ranking_excel=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
-    gene_names=final_gene_names,
-    OutputDir=SHAP_OUTPUT_DIR,
-    labels=labels,
-    sheet="Top_20_by_Hybrid"
-)
-def plot_top_20_shap_importance_from_excel(
-    shap_matrix,
-    gene_ranking_excel,
-    gene_names,
-    OutputDir,
-    sheet="Top_20_by_Hybrid"
-):
-    """
-    Generates a horizontal barplot for top 20 genes based on SHAP importance from Excel.
-    Works for both single- and multi-omics SHAP matrices.
-    """
-    print(f"📌 Generating Top 20 SHAP Importance Plot from: {sheet}")
-
-    try:
-        # ✅ Load top genes from Excel
-        df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
-        top_gene_names = df_top["Gene"].tolist()
-
-        # ✅ Calculate SHAP-based importance (mean abs SHAP)
-        if shap_matrix.ndim == 3:
-            print("📌 Multi-omics SHAP matrix detected — averaging across last axis.")
-            gene_importance = np.abs(shap_matrix).mean(axis=(0, 2))
-        else:
-            print("📌 Single-omics SHAP matrix detected — averaging directly.")
-            gene_importance = np.abs(shap_matrix).mean(axis=0)
-
-        # ✅ Get importance for top genes
-        gene_importance_map = dict(zip(gene_names, gene_importance))
-        valid_genes = [g for g in top_gene_names if g in gene_importance_map]
-        top_importance_values = [gene_importance_map[g] for g in valid_genes]
-
-        if not valid_genes:
-            raise ValueError("❌ None of the top genes match the SHAP matrix feature names.")
-
-        # ✅ Plot
-        fig, ax = plt.subplots(figsize=(12, 8))
-        ax.barh(valid_genes[::-1], top_importance_values[::-1], color="royalblue")
-        ax.set_xlabel("SHAP Importance", fontsize=14, fontweight="bold")
-        ax.set_ylabel("Genes", fontsize=14, fontweight="bold")
-        ax.set_title(f"Top 20 Genes by SHAP Importance ({sheet})", fontsize=16, fontweight="bold")
-        plt.gca().invert_yaxis()
-
-        # ✅ Save
-        plot_dir = os.path.join(OutputDir, sheet)
-        os.makedirs(plot_dir, exist_ok=True)
-        plt.savefig(os.path.join(plot_dir, "top_20_shap_importance.png"), dpi=300, bbox_inches="tight")
-        plt.show()
-
-        print(f"✅ Top 20 SHAP Importance Plot saved to {plot_dir}")
-
-    except Exception as e:
-        print(f"❌ Error in `plot_top_20_shap_importance_from_excel()`: {e}")
-plot_top_20_shap_importance_from_excel(
-    shap_matrix=shap_matrix_agg,
-    gene_ranking_excel=os.path.join(SHAP_OUTPUT_DIR, "shap_gene_ranking_comparison.xlsx"),
-    gene_names=final_gene_names,
-    OutputDir=SHAP_OUTPUT_DIR,
-    sheet="Top_20_by_Hybrid"
-)
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-
-def plot_pca_heatmap_from_excel(
-    X_sample, gene_ranking_excel, gene_names, OutputDir, sheet="Top_20_by_Hybrid"
-):
-    print(f"📌 Generating PCA Heatmap from: {sheet}")
-    try:
-        df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
-        top_gene_names = df_top["Gene"].tolist()
-        top_gene_indices = [gene_names.index(g) for g in top_gene_names if g in gene_names]
-
-        top_gene_features = X_sample[:, top_gene_indices]
-        if top_gene_features.ndim == 3:
-            print("📌 Multi-omics detected: Averaging across last axis.")
-            top_gene_features = top_gene_features.mean(axis=-1)
-
-        scaler = StandardScaler()
-        top_gene_features_scaled = scaler.fit_transform(top_gene_features.T)
-
-        pca = PCA(n_components=2)
-        pca_result = pca.fit_transform(top_gene_features_scaled)
-        df_pca = pd.DataFrame(pca_result, columns=["PC1", "PC2"], index=top_gene_names)
-
-        plt.figure(figsize=(12, 8))
-        sns.heatmap(df_pca, cmap="coolwarm", annot=True, fmt=".2f", linewidths=0.8, linecolor="white")
-        plt.xlabel("Principal Components", fontsize=14, fontweight="bold")
-        plt.ylabel("Genes", fontsize=14, fontweight="bold")
-        plt.title("PCA-Based Heatmap of Gene Expression", fontsize=16, fontweight="bold")
-
-        plot_dir = os.path.join(OutputDir, sheet)
-        os.makedirs(plot_dir, exist_ok=True)
-        plt.savefig(os.path.join(plot_dir, "pca_gene_expression_heatmap.png"), dpi=300, bbox_inches="tight")
-        plt.show()
-        print(f"✅ PCA Heatmap saved to {plot_dir}")
-    except Exception as e:
-        print(f"❌ Error in PCA heatmap: {e}")
-import umap
-
-def plot_umap_gene_embedding_from_excel(
-    X_sample, gene_ranking_excel, gene_names, OutputDir, sheet="Top_20_by_Hybrid"
-):
-    print(f"📌 Generating UMAP Gene Expression Embedding from: {sheet}")
-    try:
-        df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
-        top_gene_names = df_top["Gene"].tolist()
-        top_gene_indices = [gene_names.index(g) for g in top_gene_names if g in gene_names]
-
-        top_gene_features = X_sample[:, top_gene_indices]
-        if top_gene_features.ndim == 3:
-            print("📌 Multi-omics detected: Averaging across last axis.")
-            top_gene_features = top_gene_features.mean(axis=-1)
-
-        reducer = umap.UMAP(n_neighbors=10, min_dist=0.1, n_components=2, random_state=42)
-        umap_result = reducer.fit_transform(top_gene_features.T)
-
-        df_umap = pd.DataFrame(umap_result, columns=["UMAP1", "UMAP2"], index=top_gene_names)
-        plt.figure(figsize=(12, 8))
-        sns.scatterplot(x="UMAP1", y="UMAP2", data=df_umap, hue=df_umap.index, palette="tab10", legend=False)
-        plt.xlabel("UMAP Dimension 1", fontsize=14, fontweight="bold")
-        plt.ylabel("UMAP Dimension 2", fontsize=14, fontweight="bold")
-        plt.title("UMAP-Based Gene Expression Embedding", fontsize=16, fontweight="bold")
-
-        plot_dir = os.path.join(OutputDir, sheet)
-        os.makedirs(plot_dir, exist_ok=True)
-        plt.savefig(os.path.join(plot_dir, "umap_gene_expression_embedding.png"), dpi=300, bbox_inches="tight")
-        plt.show()
-        print(f"✅ UMAP Embedding saved to {plot_dir}")
-    except Exception as e:
-        print(f"❌ Error in UMAP embedding: {e}")
-def plot_feature_importance_from_excel(
-    shap_matrix, gene_ranking_excel, gene_names, OutputDir, sheet="Top_20_by_Hybrid"
-):
-    print(f"📌 Generating SHAP Feature Importance Barplot from: {sheet}")
-    try:
-        df_top = pd.read_excel(gene_ranking_excel, sheet_name=sheet)
-        top_gene_names = df_top["Gene"].tolist()
-        top_gene_indices = [gene_names.index(g) for g in top_gene_names if g in gene_names]
-
-        if shap_matrix.ndim == 3:
-            gene_importance = np.abs(shap_matrix).mean(axis=(0, 2))
-        else:
-            gene_importance = np.abs(shap_matrix).mean(axis=0)
-
-        norm = mcolors.Normalize(vmin=np.min(gene_importance), vmax=np.max(gene_importance))
-        sm = plt.cm.ScalarMappable(cmap="coolwarm", norm=norm)
-        sm.set_array([])
-
-        colors = [plt.cm.coolwarm(norm(gene_importance[i])) for i in top_gene_indices]
-        plt.figure(figsize=(14, 7))
-        plt.barh([gene_names[i] for i in top_gene_indices][::-1], gene_importance[top_gene_indices][::-1],
-                 color=colors[::-1], edgecolor="black", linewidth=1)
-
-        plt.xlabel("Mean SHAP Importance", fontsize=12, fontweight="bold", fontname="Times New Roman")
-        plt.ylabel("Genes", fontsize=12, fontweight="bold", fontname="Times New Roman")
-        plt.title("Top Genes by SHAP Importance", fontsize=14, fontweight="bold", fontname="Times New Roman")
-        plt.gca().invert_yaxis()
-
-        cbar = plt.colorbar(sm)
-        cbar.set_label("SHAP Importance Level", fontsize=12, fontweight="bold", fontname="Times New Roman")
-        plt.grid(axis="x", linestyle="--", alpha=0.6)
-
-        plot_dir = os.path.join(OutputDir, sheet)
-        os.makedirs(plot_dir, exist_ok=True)
-        plt.savefig(os.path.join(plot_dir, "top_selected_genes_importance.png"), dpi=300, bbox_inches="tight")
-        plt.show()
-        print(f"✅ SHAP Importance Barplot saved to {plot_dir}")
-    except Exception as e:
-        print(f"❌ Error in SHAP feature importance plot: {e}")
-sheet_name = "Top_20_by_Hybrid"
-plot_pca_heatmap_from_excel(X_sample_flattened, excel_path, final_gene_names, SHAP_OUTPUT_DIR, sheet=sheet_name)
-plot_umap_gene_embedding_from_excel(X_sample_flattened, excel_path, final_gene_names, SHAP_OUTPUT_DIR, sheet=sheet_name)
-plot_feature_importance_from_excel(shap_matrix_agg, excel_path, final_gene_names, SHAP_OUTPUT_DIR, sheet=sheet_name)
