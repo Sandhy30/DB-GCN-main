@@ -14,10 +14,5 @@ The BAT will run:
   - Single-CV for all streams (fusion, gcn_only, mlp_only) and filters (all, band_reject)
   - Nested-CV for the same grid with --use_single_splits_in_ncv
 
-Folds are stable across runs: --seed 1 --num_folds 5 --split_scope global.
+Folds are stable across runs: --seed 47 --num_folds 5 --split_scope global.
 Gene selection remains TRAIN-FOLD only (as in your script).
-
-Logs:
-  review2resluts\logs\single_<stream>_<filter>.log
-  review2resluts\logs
-ested_<stream>_<filter>.log
