@@ -7,20 +7,17 @@ import torch.nn.functional as F
 import numpy as np
 from math import comb
 
-# 👉 Add these two lines:
 from typing import Union, Optional, Sequence, Tuple
 TensorLike = Union[torch.Tensor, Sequence[float], np.ndarray]
 
-# (Kept for compatibility if you use it elsewhere)
+
 try:
     from utilsdata import sparse_mx_to_torch_sparse_tensor  # noqa: F401
 except Exception:
     pass
 
 
-# ============================
-# Original: DB-GCN (unchanged)
-# ============================
+
 class Graph_GCN(nn.Module):
     """
     DB-GCN: Bernstein-polynomial spectral GCN + MLP dual-stream with ablations.
@@ -41,9 +38,6 @@ class Graph_GCN(nn.Module):
         self.FC2_F             = int(FC2_F)
         self.stream_mode       = str(stream_mode).lower()
         self.out_dim           = int(out_dim)
-
-        # keep more nodes before FC head (helps rare classes; deterministic pooling unchanged)
-        
         self.pool_out_nodes = int(min(self.D_g, max(160, self.D_g // 2)))
 
         if (self.D_g % self.pool_out_nodes) == 0:
@@ -55,35 +49,26 @@ class Graph_GCN(nn.Module):
             self.avg_pool = None
         self.FC1Fin = self.CL1_F * self.pool_out_nodes  # flattened pooled graph features
 
-        # ----- Graph stream -----
+        #Graph stream -
         self.cl1 = nn.Linear(self.F_0, self.CL1_F)
         self.fc1 = nn.Linear(self.FC1Fin, FC1_F)
         self.fc2 = nn.Linear(FC1_F, self.FC2_F) if self.FC2_F > 0 else None
         self.fc3 = nn.Linear(self.FC2_F, self.D_g * self.F_0) if self.FC2_F > 0 else None  # optional decoder
 
-        # ----- MLP stream (omics dense path) -----
+        #  MLP stream (omics dense path) 
         self.nn_fc1 = nn.Linear(self.D_g * self.F_0, NN_FC1)
         self.nn_bn1 = nn.BatchNorm1d(NN_FC1)
         self.nn_fc2 = nn.Linear(NN_FC1, NN_FC2)
         self.nn_bn2 = nn.BatchNorm1d(NN_FC2)
-
-        # NEW: fusion gate to prevent MLP from dominating early (sigmoid(-1)≈0.27)
         self.mlp_gate = nn.Parameter(torch.tensor(-1.0))
-
-        # NEW: light channel-dropout on raw features (affects MLP more than GCN)
-        self.input_feat_dropout_p = 0.05  # small; safe for omics
-
-        # ----- Heads -----
+        self.input_feat_dropout_p = 0.05  
         self.fc_head_gcn = nn.Linear(FC1_F, out_dim)          # for "gcn"
         self.fc_head_mlp = nn.Linear(NN_FC2, out_dim)         # for "mlp"
         self.FC_sum2     = nn.Linear(FC1_F + NN_FC2, out_dim) # for "fusion"
 
-        # Cache for Bernstein coefficients a_j(θ, K)
         self._bern_cache = {}
-
-        # init
         self.apply(self._weight_init)
-    # --------------------------- init ---------------------------
+  
     @staticmethod
     def _weight_init(m):
         if isinstance(m, nn.Linear):
@@ -91,7 +76,6 @@ class Graph_GCN(nn.Module):
             if m.bias is not None:
                 nn.init.zeros_(m.bias)
 
-    # --------------------------- utils ---------------------------
     def set_stream_mode(self, mode: str):
         mode = mode.lower()
         assert mode in ("gcn", "mlp", "fusion")
@@ -122,7 +106,6 @@ class Graph_GCN(nn.Module):
         self._bern_cache[key] = a_t_cpu
         return a_t_cpu
 
-    # -------- deterministic pooling helper --------
     def _pool1d_det(self, x_ch_last: torch.Tensor) -> torch.Tensor:
         """
         Deterministic 1D downsampling by average over contiguous segments.
@@ -144,14 +127,14 @@ class Graph_GCN(nn.Module):
         # prefix sums
         if need_cpu_cumsum:
             x_work = x_ch_last.to("cpu")
-            prefix = F.pad(x_work, (1, 0)).cumsum(dim=2)   # (B, C, G+1) on CPU
+            prefix = F.pad(x_work, (1, 0)).cumsum(dim=2)   
             idx_device = "cpu"
         else:
             x_work = x_ch_last
-            prefix = F.pad(x_work, (1, 0)).cumsum(dim=2)   # (B, C, G+1) on current device
+            prefix = F.pad(x_work, (1, 0)).cumsum(dim=2)  
             idx_device = device
 
-        # integer bin edges 0..G
+      
         edges = torch.linspace(0, G, steps=T + 1, dtype=torch.int64, device=idx_device)
         edges = torch.clamp(edges, 0, G)
         left_idx, right_idx = edges[:-1], edges[1:]
@@ -164,7 +147,6 @@ class Graph_GCN(nn.Module):
             out = out.to(device)
         return out
 
-    # --------------------------- core ----------------------------
     def forward(
         self,
         x_in: torch.Tensor,
@@ -174,14 +156,8 @@ class Graph_GCN(nn.Module):
         *,
         return_probs: bool = False,
     ) -> Tuple[Optional[torch.Tensor], torch.Tensor, torch.Tensor, int]:
-        """
-        Returns:
-          x_decode_gae : optional reconstruction (None if decoder disabled)
-          x_hidden_gae : graph hidden representation after fc1
-          out          : logits (training) or probabilities if return_probs=True
-          0            : placeholder (API compatibility)
-        """
-        # ---------- shape normalize ----------
+        
+      
         if x_in.ndim == 2:
             if x_in.shape[1] != self.D_g * self.F_0:
                 raise ValueError(f"Expected features {self.D_g * self.F_0}, got {x_in.shape[1]}")
@@ -196,13 +172,13 @@ class Graph_GCN(nn.Module):
         else:
             raise ValueError(f"Bad input shape {tuple(x_in.shape)}; expected (B,V,F0) or (B,V*F0)")
 
-        # --- very light feature dropout at input (per sample, per gene-channel)
+     
         if self.training and self.input_feat_dropout_p > 0:
             mask = (torch.rand((x.shape[0], 1, x.shape[2]), device=x.device) >
                     self.input_feat_dropout_p)
             x = x * mask
 
-        # ---------- MLP-only ----------
+        # MLP-only 
         if self.stream_mode == "mlp":
             x_nn = x.reshape(x.size(0), -1)
             x_nn = self.nn_fc1(x_nn); x_nn = self.nn_bn1(x_nn); x_nn = F.relu(x_nn)
@@ -213,7 +189,7 @@ class Graph_GCN(nn.Module):
             out = F.softmax(logits, dim=1) if return_probs else logits
             return None, x_nn, out, 0
 
-        # ---------- GCN (for "gcn" and "fusion") ----------
+        # GCN (for "gcn" and "fusion")
         if L is None or (isinstance(L, (list, tuple)) and len(L) == 0):
             raise ValueError("Laplacian L is required for stream_mode 'gcn' or 'fusion'.")
         if not isinstance(theta, (list, tuple, torch.Tensor)):
@@ -238,8 +214,7 @@ class Graph_GCN(nn.Module):
                                         self.CL1_F, self.CL1_K, theta_t)
         x_g = F.relu(x_g)
 
-        # ---- Deterministic pooling over nodes -> fixed-size vector per sample ----
-        # (B, V, CL1_F) -> (B, CL1_F, V) -> pool -> (B, CL1_F, P) -> (B, P, CL1_F)
+      
         x_g = x_g.permute(0, 2, 1)
         x_g = self._pool1d_det(x_g)
         x_g = x_g.permute(0, 2, 1)
@@ -248,7 +223,7 @@ class Graph_GCN(nn.Module):
         x_hidden_gae = self.fc1(x_g); x_hidden_gae = F.relu(x_hidden_gae)
         x_hidden_gae = F.dropout(x_hidden_gae, p=dropout_p, training=self.training)
 
-        # Optional decoder branch (reconstruction)
+      
         x_decode_gae = None
         if self.fc2 is not None and self.fc3 is not None:
             x_decode_gae = self.fc2(x_hidden_gae); x_decode_gae = F.relu(x_decode_gae)
@@ -260,14 +235,14 @@ class Graph_GCN(nn.Module):
             out = F.softmax(logits, dim=1) if return_probs else logits
             return x_decode_gae, x_hidden_gae, out, 0
 
-        # ---------- Fusion ----------
+
         x_nn = x.reshape(x.size(0), -1)
         x_nn = self.nn_fc1(x_nn); x_nn = self.nn_bn1(x_nn); x_nn = F.relu(x_nn)
         x_nn = F.dropout(x_nn, p=dropout_p, training=self.training)
         x_nn = self.nn_fc2(x_nn); x_nn = self.nn_bn2(x_nn); x_nn = F.relu(x_nn)
         x_nn = F.dropout(x_nn, p=dropout_p, training=self.training)
 
-        # learnable gate in (0,1); starts low so GCN leads, grows if MLP helps
+       
         gate = torch.sigmoid(self.mlp_gate)
         x_nn = gate * x_nn
 
@@ -285,15 +260,12 @@ class Graph_GCN(nn.Module):
         K: int,
         theta_t: torch.Tensor
     ) -> torch.Tensor:
-        """
-        Apply sum_j a_j * L^j to x, where a_j are expanded from θ_k and Bernstein B_k,
-        then normalize and apply a per-node linear map cl: R^{F0} -> R^{Fout}.
-        """
+      
         device = x.device
         a_t = self._bern_coeffs(K, theta_t).to(device)
 
         def L_apply_dense(y, Ld):
-            # y: (B, V, F0); Ld: (V, V) -> (B, V, F0)
+         
             return torch.einsum("vw,bwf->bvf", Ld, y)
 
         def L_apply_sparse(y, Ls):
@@ -303,7 +275,6 @@ class Graph_GCN(nn.Module):
             z2 = torch.sparse.mm(Ls, y2.t()).t()         # (B*F0, V)
             return z2.reshape(B, F0, V).permute(0, 2, 1) # (B, V, F0)
 
-        # Choose dense/sparse path (expects L already on same device)
         if isinstance(L, torch.Tensor):
             if getattr(L, "layout", None) == torch.sparse_csr:
                 Ls = L.to_sparse_coo().coalesce()
@@ -318,7 +289,7 @@ class Graph_GCN(nn.Module):
             Ld = torch.tensor(L, dtype=torch.float32, device=device)
             L_apply = lambda y: L_apply_dense(y, Ld)
 
-        # Accumulate a_0*X + a_1*L X + ... + a_K*L^K X
+    
         if K == 0:
             out = a_t[0] * x
         else:
@@ -328,12 +299,11 @@ class Graph_GCN(nn.Module):
                 w = L_apply(w)
                 out = out + a_t[j] * w
 
-        # Normalize across nodes, then per-node linear projection
+
         out = F.normalize(out, p=2, dim=1)
         out = cl(out)  # (B, V, Fout)
         return out
 
-    # --------------------- convenience api -----------------------
     @torch.no_grad()
     def predict_proba(
         self,
@@ -357,18 +327,8 @@ class Graph_GCN(nn.Module):
         return loss_recon + loss_cls + lambda_l2 * l2_regularization * l2_loss
 
 
-# ============================
-# Baseline 1: Chebyshev GCN
-# ============================
 class ChebNet(nn.Module):
-    """
-    Chebyshev spectral GCN:
-      H = sum_{k=0..K} T_k(L_tilde) X W_k, with L_tilde in [-1, 1].
-    Reuses your MLP/fusion heads for fair comparison.
 
-    NOTE: Make sure you rescale L to the Chebyshev domain [-1,1]
-          before passing it in (do this in coarsening.py).
-    """
     def __init__(self, net_parameters, stream_mode: str = "fusion"):
         super().__init__()
         F_0, D_g, CL1_F, CL1_K, FC1_F, FC2_F, NN_FC1, NN_FC2, out_dim = net_parameters
@@ -381,7 +341,7 @@ class ChebNet(nn.Module):
         for w in self.W:
             nn.init.xavier_uniform_(w)
 
-        # readout + MLP heads reuse your design
+
         self.fc1 = nn.Linear(CL1_F * max(1, (D_g // self.poolsize)), FC1_F)
         self.nn_fc1 = nn.Linear(D_g * F_0, NN_FC1)
         self.nn_fc2 = nn.Linear(NN_FC1, NN_FC2)
@@ -390,7 +350,7 @@ class ChebNet(nn.Module):
         self.FC_sum2     = nn.Linear(FC1_F + NN_FC2, out_dim)
 
     def _cheb_stack(self, X, L_tilde):
-        # X: (B,V,F0), L_tilde: (V,V) dense
+     
         def L_apply(Y):  # (B,V,F)
             return torch.einsum('vw,bwf->bvf', L_tilde, Y)
 
@@ -417,7 +377,7 @@ class ChebNet(nn.Module):
         return x
 
     def forward(self, x_in, dropout_p, L, _theta_unused):
-        # shape normalize (same as Graph_GCN)
+    
         if x_in.ndim == 2:
             B = x_in.shape[0]
             x = x_in.view(B, self.D_g, self.F_0)
@@ -463,12 +423,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class BernNetHead(nn.Module):
-    """
-    Bernstein-polynomial spectral propagation head.
-    Expects L in [0,1] (you already rescale for bernnet upstream).
-    Works with stream_mode in {"fusion","gcn_only"}.
-    forward(...) returns: (None, H_hidden, logits, 0)
-    """
+ 
     def __init__(self, D_g, F_0, hidden, out_dim, K,
                  stream_mode="fusion", activation="relu",
                  bn_before=True, bn_after=True, dropout=0.1):
@@ -484,25 +439,25 @@ class BernNetHead(nn.Module):
         act = {"relu": nn.ReLU, "gelu": nn.GELU, "elu": nn.ELU}.get(activation, nn.ReLU)
         self.act = act(inplace=False)
 
-        # ---- Graph path ----
+      
         self.fc1 = nn.Linear(F_0, hidden, bias=True)
         self.bn1 = nn.BatchNorm1d(hidden)
         self.bn2 = nn.BatchNorm1d(hidden)
 
-        # Bernstein weights θ_k (per-channel). Identity start: θ_0=1, others=0.
+    
         self.theta = nn.Parameter(torch.zeros(self.K + 1, hidden), requires_grad=True)
         with torch.no_grad():
             self.theta[0].fill_(1.0)
 
-        # Binomial coefficients C(K, i)
+       
         self.register_buffer("binom", torch.tensor([math.comb(self.K, i)
                                                     for i in range(self.K + 1)],
                                                    dtype=torch.float32))
 
-        # Classifier for graph path
+       
         self.fc2 = nn.Linear(hidden, out_dim, bias=True)
 
-        # ---- MLP fusion branch (neighborhood-agnostic) ----
+      
         if self.stream_mode == "fusion":
             self.mlp1 = nn.Linear(F_0, hidden, bias=True)
             self.mlp_bn = nn.BatchNorm1d(hidden)
@@ -510,9 +465,7 @@ class BernNetHead(nn.Module):
 
     @staticmethod
     def _mat_apply(M: torch.Tensor, X: torch.Tensor) -> torch.Tensor:
-        """
-        M: [N,N] dense or sparse, X: [B,N,F] -> returns [B,N,F]
-        """
+      
         if M.is_sparse:
             B, N, F = X.shape
             Y = X.permute(0, 2, 1).reshape(B * F, N)      # (B*F, N)
@@ -552,12 +505,8 @@ class BernNetHead(nn.Module):
                 L: torch.Tensor,
                 _theta_unused=None,
                 A_dense=None):
-        """
-        x_in: (B,N,F0) or (B,N*F0)
-        L   : (N,N) rescaled normalized Laplacian in [0,1]
-        Returns (None, H_hidden, logits, 0)
-        """
-        # ---- shape normalize ----
+    
+        # shape normalize 
         if x_in.ndim == 2:
             B = x_in.shape[0]
             x = x_in.view(B, self.D_g, self.F_0)
