@@ -167,7 +167,7 @@ def export_runtime_memory_by_k(df: pd.DataFrame, out_dir: str, tag: str = ""):
              .reset_index())
 
     csv_out = os.path.join(out_dir, f"runtime_by_k{('_'+tag) if tag else ''}.csv")
-    agg.to_csv(csv_out, index=False); print(f"✅ Runtime-by-K CSV: {csv_out}")
+    agg.to_csv(csv_out, index=False); print(f" Runtime-by-K CSV: {csv_out}")
 
     # One set of figures per (db, stream, omic)
     triples = [c for c in ["database","stream_mode","num_omic"] if c in agg.columns]
@@ -797,7 +797,7 @@ def _ncv_eval_one_split(expr_all_df, cnv_all_df, adjacency_matrix_file, non_null
                 f"accuracy={acc:.6f}\nmacro_f1={macro_f1:.6f}\nmacro_auc="
                 f"{'nan' if np.isnan(macro_auc) else f'{macro_auc:.6f}'}\n"
             )
-        print(f"🧾 Saved split artifacts to: {save_dir}")
+        print(f" Saved split artifacts to: {save_dir}")
     except Exception as e_save:
         print(f" Skipped saving split artifacts: {e_save}")
 
@@ -2169,7 +2169,7 @@ try:
                 main_small = pd.DataFrame(rows[1:], columns=rows[0])
                 main_csv = os.path.join(OutputDir, "main_text_single_cv.csv")
                 main_small.to_csv(main_csv, index=False)
-                print(f"✅ Concise single-CV main-text table written: {main_csv}")
+                print(f" Concise single-CV main-text table written: {main_csv}")
 
     except Exception as e:
         print(f" Patch 2 (ablation/main-text) skipped due to: {e}")
