@@ -58,7 +58,7 @@ The resulting matrices are:
 ### 4. Feature selection for target gene budgets
 
 13. For each target gene budget (e.g. 1000, 2000, …), run a feature selection method  
-    (variance / ANOVA / random forest, as used in the paper) **inside CV folds**:
+    (variance)
     - Within each training fold, rank genes using the chosen selector.
     - Select the top-N genes.
     - Apply the same gene subset to validation and test samples in that fold.
