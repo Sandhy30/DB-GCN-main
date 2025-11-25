@@ -5,8 +5,7 @@ The processed datasets used in this work are available at the following Google D
 - [Google Drive – DB-GCN datasets](https://drive.google.com/drive/folders/16tBjsK88flqBP2xOEAH44swrCF5Z2jmZ?usp=drive_link)
 
 ## Data and preprocessing
-
-This repository assumes pan-cancer TCGA data (RNA + CNV) and gene networks (STRING / BioGRID / Coexpression).  
+ repository  uses pan-cancer TCGA data (RNA + CNV) and gene networks (STRING / BioGRID / Coexpression).  
 Below are the exact preprocessing steps used to create the CSV input files.
 
 ---
